@@ -1,0 +1,10 @@
+{
+  "name": "tprefresher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Durable bathroom toilet-paper status board with phone API and ESP32 display.",
+  "type": "commonjs",
+  "scripts": { "start": "node backend/server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "express": "^4.21.2" }
+}
