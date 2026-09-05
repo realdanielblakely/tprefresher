@@ -3,6 +3,7 @@
 A durable toilet-paper status board.
 
 A phone page flags a bathroom, the closet display polls the same API, and tapping a flagged card confirms the restock. A flag is amber for 24 hours, then becomes a red high alert.
+For a Claude Code handoff, see [CLAUDE.md](CLAUDE.md).
 
 ## Bathroom IDs
 
