@@ -5,6 +5,8 @@
 #include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <XPT2046_Touchscreen.h>
+#include <ArduinoOTA.h>
+#include <WiFiUdp.h>
 #include "secrets.h"
 #ifndef API_TOKEN
 #define API_TOKEN ""
@@ -19,6 +21,17 @@ constexpr int TOUCH_X_MIN = 280, TOUCH_X_MAX = 3860;
 constexpr int TOUCH_Y_MIN = 340, TOUCH_Y_MAX = 3860;
 TFT_eSPI tft;
 XPT2046_Touchscreen touch(TOUCH_CS_PIN, TOUCH_IRQ_PIN);
+WiFiUDP logUdp;
+// Mirror serial output to a UDP broadcast so the board stays debuggable off USB.
+void logf(const char* format, ...) {
+  char line[192]; va_list args; va_start(args, format);
+  vsnprintf(line, sizeof(line), format, args); va_end(args);
+  Serial.print(line);
+  if (WiFi.status() == WL_CONNECTED) {
+    IPAddress broadcast = WiFi.localIP(); broadcast[3] = 255;
+    if (logUdp.beginPacket(broadcast, LOG_UDP_PORT)) { logUdp.write(reinterpret_cast<const uint8_t*>(line), strlen(line)); logUdp.endPacket(); }
+  }
+}
 unsigned long lastPoll = 0;
 bool online = false;
 struct Bathroom { String id; String name; String state; String flaggedAt; };
@@ -84,10 +97,13 @@ void showMessage(const char* title, const char* detail) {
   tft.drawString(detail, SCREEN_W / 2, 245, 2); tft.setTextDatum(TL_DATUM);
 }
 bool connectWiFi() {
-  WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID, WIFI_PASS); const unsigned long started = millis();
+  // Power save drops inbound packets while the radio naps, which makes the board
+  // unpingable and invisible to OTA even though its own requests still work.
+  WiFi.mode(WIFI_STA); WiFi.setSleep(false);
+  WiFi.begin(WIFI_SSID, WIFI_PASS); const unsigned long started = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - started < WIFI_TIMEOUT_MS) delay(250);
-  if (WiFi.status() == WL_CONNECTED) Serial.printf("WiFi connected, ip=%s rssi=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-  else Serial.printf("WiFi FAILED, status=%d ssid=%s\n", WiFi.status(), WIFI_SSID);
+  if (WiFi.status() == WL_CONNECTED) logf("WiFi connected, ip=%s rssi=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  else logf("WiFi FAILED, status=%d ssid=%s\n", WiFi.status(), WIFI_SSID);
   return WiFi.status() == WL_CONNECTED;
 }
 bool requestApi(const String& path, const char* method) {
@@ -102,7 +118,7 @@ bool fetchStatus() {
   HTTPClient http; if (!http.begin(String(API_BASE_URL) + "/api/status")) { online = false; return false; }
   http.setTimeout(4500); if (strlen(API_TOKEN) > 0) http.addHeader("X-API-Token", API_TOKEN);
   const int code = http.GET();
-  Serial.printf("GET %s/api/status -> %d\n", API_BASE_URL, code);
+  logf("GET %s/api/status -> %d\n", API_BASE_URL, code);
   if (code != HTTP_CODE_OK) { http.end(); online = false; return false; }
   DynamicJsonDocument document(4096); const DeserializationError error = deserializeJson(document, http.getStream()); http.end();
   if (error) { online = false; return false; }
@@ -122,7 +138,7 @@ void handleTouch() {
   const int x = constrain(map(raw.x, TOUCH_X_MIN, TOUCH_X_MAX, 0, SCREEN_W - 1), 0, SCREEN_W - 1);
   // Panel Y runs opposite the display, so map from max to min.
   const int y = constrain(map(raw.y, TOUCH_Y_MAX, TOUCH_Y_MIN, 0, SCREEN_H - 1), 0, SCREEN_H - 1);
-  Serial.printf("touch raw=(%d,%d) mapped=(%d,%d)\n", raw.x, raw.y, x, y);
+  logf("touch raw=(%d,%d) mapped=(%d,%d)\n", raw.x, raw.y, x, y);
   for (size_t i = 0; i < bathroomCount; ++i) {
     const int top = 84 + static_cast<int>(i) * 124;
     if (x >= 10 && x <= 310 && y >= top && y <= top + 108) {
@@ -137,12 +153,36 @@ void handleTouch() {
   }
 }
 }
+void startOta() {
+  ArduinoOTA.setHostname(OTA_HOSTNAME);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.onStart([]() { screenReady = false; showMessage("Updating", "Do not unplug"); logf("OTA start\n"); });
+  ArduinoOTA.onProgress([](unsigned int done, unsigned int total) {
+    static int lastPercent = -1; const int percent = total ? static_cast<int>((done * 100ULL) / total) : 0;
+    if (percent == lastPercent) return;
+    lastPercent = percent;
+    tft.fillRect(60, 280, 200, 16, TFT_WHITE); tft.fillRect(60, 280, 2 * percent, 16, TFT_DARKGREEN);
+  });
+  ArduinoOTA.onEnd([]() { showMessage("Updated", "Restarting"); logf("OTA done\n"); });
+  ArduinoOTA.onError([](ota_error_t error) { logf("OTA error %u\n", error); showMessage("Update failed", "Board still running"); });
+  ArduinoOTA.begin();
+  logf("OTA ready at %s.local, build %s %s\n", OTA_HOSTNAME, __DATE__, __TIME__);
+}
 void setup() {
   Serial.begin(115200); pinMode(27, OUTPUT); digitalWrite(27, HIGH); tft.init(); tft.setRotation(0);
   SPI.begin(TOUCH_SCK_PIN, TOUCH_MISO_PIN, TOUCH_MOSI_PIN, TOUCH_CS_PIN); touch.begin(); touch.setRotation(0);
-  showMessage("TP Refresher", "Connecting to Wi-Fi..."); online = connectWiFi(); fetchStatus(); drawScreen();
+  showMessage("TP Refresher", "Connecting to Wi-Fi...");
+  WiFi.setHostname(OTA_HOSTNAME); online = connectWiFi();
+  fetchStatus(); drawScreen();  // loop() starts OTA once Wi-Fi is up
 }
 void loop() {
+  static bool otaStarted = false;
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!otaStarted) { startOta(); otaStarted = true; }
+    ArduinoOTA.handle();
+  } else {
+    otaStarted = false;
+  }
   handleTouch();
   if (millis() - lastPoll >= POLL_INTERVAL_MS) { lastPoll = millis(); fetchStatus(); renderUpdates(); }
   delay(20);
