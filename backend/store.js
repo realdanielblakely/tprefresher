@@ -2,7 +2,10 @@ const fs = require('fs/promises');
 const path = require('path');
 const { bathrooms } = require('./config');
 const dataFile = process.env.DATA_FILE || path.join(__dirname, 'data.json');
-const overdueMs = 24 * 60 * 60 * 1000;
+// Reported severity, lowest to highest. An unattended flag climbs one rung every
+// escalateMs and stops at the top. See CLAUDE.md for why escalation works this way.
+const levels = ['low', 'urgent', 'out'];
+const escalateMs = 12 * 60 * 60 * 1000;
 let state = null;
 let writeQueue = Promise.resolve();
 
@@ -25,18 +28,22 @@ async function persist() {
 }
 function save() { writeQueue = writeQueue.then(persist); return writeQueue; }
 function statusFor(bathroom) {
-  const flaggedAt = state[bathroom.id]?.flaggedAt || null;
-  if (!flaggedAt) return { ...bathroom, state: 'ok', flaggedAt: null };
+  const entry = state[bathroom.id] || {};
+  const flaggedAt = entry.flaggedAt || null;
+  if (!flaggedAt) return { ...bathroom, state: 'ok', reported: null, flaggedAt: null };
+  const reported = levels.includes(entry.level) ? entry.level : 'low';
   const age = Date.now() - new Date(flaggedAt).getTime();
-  return { ...bathroom, state: age >= overdueMs ? 'overdue' : 'needs', flaggedAt };
+  const steps = Number.isFinite(age) && age > 0 ? Math.floor(age / escalateMs) : 0;
+  const index = Math.min(levels.length - 1, levels.indexOf(reported) + steps);
+  return { ...bathroom, state: levels[index], reported, flaggedAt };
 }
 async function allStatuses() { await load(); return bathrooms.map(statusFor); }
-async function update(id, flaggedAt) {
+async function update(id, flaggedAt, level) {
   await load();
   const bathroom = bathrooms.find((entry) => entry.id === id);
   if (!bathroom) return null;
-  state[id] = { flaggedAt };
+  state[id] = flaggedAt ? { flaggedAt, level: levels.includes(level) ? level : 'low' } : { flaggedAt: null };
   await save();
   return statusFor(bathroom);
 }
-module.exports = { allStatuses, update, dataFile };
+module.exports = { allStatuses, update, dataFile, levels };

@@ -10,18 +10,24 @@ h1 { margin: 0; font-size: clamp(1.8rem, 7vw, 2.65rem); line-height: 1.05; lette
 .connection.offline { background: #f5dfd4; color: #9a422d; }
 .cards { display: grid; gap: 14px; }
 .card { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 112px; padding: 18px; border: 1px solid #d8e0d9; border-radius: 22px; background: #fff; box-shadow: 0 5px 18px rgba(28,52,43,.06); }
-.card.needs { border-color: #e0b851; background: #fffaf0; }
-.card.overdue { border: 2px solid #d4553d; background: #fff2ef; }
+.card.low { border-color: #e0b851; background: #fffaf0; }
+.card.urgent { border: 2px solid #e07a2f; background: #fff5ec; }
+.card.out { border: 2px solid #d4553d; background: #fff2ef; }
 .card h2 { margin: 0 0 7px; font-size: 1.42rem; }
 .detail { margin: 0; color: #68756f; font-size: .9rem; }
 .badge { display: inline-block; margin-bottom: 5px; color: #4f6c60; font-size: .73rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-.needs .badge { color: #9a6900; }
-.overdue .badge { color: #b72f1c; }
+.low .badge { color: #9a6900; }
+.urgent .badge { color: #b3560d; }
+.out .badge { color: #b72f1c; }
 .action { min-width: 122px; min-height: 58px; border: 0; border-radius: 15px; padding: 10px 14px; background: #174d43; color: white; font: inherit; font-weight: 800; cursor: pointer; touch-action: manipulation; }
 .action:active { transform: scale(.98); }
-.needs .action { background: #bf8200; }
-.overdue .action { background: #bd3c29; }
+.actions { display: flex; flex-direction: column; gap: 8px; min-width: 168px; }
+.action.level { min-height: 44px; font-size: .9rem; font-weight: 700; }
+.action.level.low { background: #bf8200; }
+.action.level.urgent { background: #cf6511; }
+.action.level.out { background: #bd3c29; }
+.action.confirm { background: #174d43; }
 .action:disabled { opacity: .55; cursor: wait; }
 .error { min-height: 1.5em; margin: 17px 3px 0; color: #b72f1c; }
 footer { margin-top: 28px; color: #7a8780; font-size: .82rem; text-align: center; }
-@media (max-width: 420px) { .card { align-items: flex-start; flex-direction: column; } .action { width: 100%; } }
+@media (max-width: 420px) { .card { align-items: stretch; flex-direction: column; } .actions { width: 100%; } .action { width: 100%; } }

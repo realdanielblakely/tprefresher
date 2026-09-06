@@ -34,15 +34,22 @@ void logf(const char* format, ...) {
 }
 unsigned long lastPoll = 0;
 bool online = false;
-struct Bathroom { String id; String name; String state; String flaggedAt; };
+struct Bathroom { String id; String name; String state; String reported; String flaggedAt; };
 Bathroom bathrooms[8]; size_t bathroomCount = 0;
 // Last values actually painted, so refreshes only touch what changed.
 String paintedState[8]; String paintedName[8];
 size_t paintedCount = 0; bool paintedOnline = false; bool screenReady = false;
 uint16_t colorFor(const String& state) {
-  if (state == "overdue") return TFT_RED;
-  if (state == "needs") return TFT_ORANGE;
+  if (state == "out") return TFT_RED;
+  if (state == "urgent") return tft.color565(255, 96, 0);
+  if (state == "low") return TFT_ORANGE;
   return TFT_DARKGREEN;
+}
+const char* labelFor(const String& state) {
+  if (state == "out") return "OUT OF PAPER";
+  if (state == "urgent") return "DANGEROUSLY LOW";
+  if (state == "low") return "LOW ON PAPER";
+  return "OK";
 }
 // Sits below the title, not beside it. The title is wide enough at font 4 that a
 // badge on the same line clips its last letters when the badge clears its box.
@@ -63,8 +70,13 @@ void drawCard(size_t index) {
   tft.fillRoundRect(10, y, 300, 108, 12, TFT_WHITE); tft.fillRoundRect(10, y, 12, 108, 12, accent);
   tft.setTextColor(TFT_DARKGREY, TFT_WHITE); tft.drawString(room.name, 30, y + 14, 4);
   tft.setTextColor(accent, TFT_WHITE);
-  String label = room.state == "overdue" ? "HIGH ALERT" : room.state == "needs" ? "NEEDS PAPER" : "OK";
-  tft.drawString(label, 31, y + 55, 2); tft.setTextDatum(TR_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+  tft.drawString(labelFor(room.state), 31, y + 55, 2);
+  // Say so when time bumped this up, so nobody thinks a person reported it.
+  if (room.reported.length() && room.reported != room.state) {
+    tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+    tft.drawString(String("was ") + labelFor(room.reported), 31, y + 83, 2);
+  }
+  tft.setTextDatum(TR_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
   tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", 298, y + 83, 2); tft.setTextDatum(TL_DATUM);
 }
 void drawCardNote(size_t index, const char* note) {
@@ -74,7 +86,7 @@ void drawCardNote(size_t index, const char* note) {
   tft.drawString(note, 298, y + 83, 2); tft.setTextDatum(TL_DATUM);
 }
 void rememberPainted() {
-  for (size_t i = 0; i < bathroomCount; ++i) { paintedState[i] = bathrooms[i].state; paintedName[i] = bathrooms[i].name; }
+  for (size_t i = 0; i < bathroomCount; ++i) { paintedState[i] = bathrooms[i].state + "/" + bathrooms[i].reported; paintedName[i] = bathrooms[i].name; }
   paintedCount = bathroomCount; paintedOnline = online; screenReady = true;
 }
 void drawScreen() {
@@ -89,8 +101,9 @@ void renderUpdates() {
   if (!screenReady || bathroomCount != paintedCount) { drawScreen(); return; }
   if (online != paintedOnline) { drawStatusBadge(); paintedOnline = online; }
   for (size_t i = 0; i < bathroomCount; ++i) {
-    if (bathrooms[i].state == paintedState[i] && bathrooms[i].name == paintedName[i]) continue;
-    drawCard(i); paintedState[i] = bathrooms[i].state; paintedName[i] = bathrooms[i].name;
+    const String signature = bathrooms[i].state + "/" + bathrooms[i].reported;
+    if (signature == paintedState[i] && bathrooms[i].name == paintedName[i]) continue;
+    drawCard(i); paintedState[i] = signature; paintedName[i] = bathrooms[i].name;
   }
 }
 void showMessage(const char* title, const char* detail) {
@@ -130,6 +143,7 @@ bool fetchStatus() {
     bathrooms[bathroomCount].id = item["id"].as<const char*>();
     bathrooms[bathroomCount].name = item["name"].as<const char*>();
     bathrooms[bathroomCount].state = item["state"].as<const char*>();
+    bathrooms[bathroomCount].reported = item["reported"].isNull() ? "" : item["reported"].as<const char*>();
     bathrooms[bathroomCount].flaggedAt = item["flaggedAt"].as<const char*>(); ++bathroomCount;
   }
   online = true; return true;

@@ -28,7 +28,8 @@ cards, Wi-Fi, five second polling, over-the-air updates, and UDP log streaming.
 The board runs on wall power away from any computer and is updated over Wi-Fi.
 
 Not done: the backend has no durable home. It runs by hand on a laptop, so the
-board shows OFFLINE whenever that laptop sleeps. That is the next real task.
+board shows OFFLINE whenever that laptop sleeps. That is the next real task, and
+Alexa voice control depends on it, since a sleeping laptop answers nothing.
 
 ## Repository layout
 - backend/: Express server, configuration, durable state, and API
@@ -40,9 +41,46 @@ board shows OFFLINE whenever that laptop sleeps. That is the next real task.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | /api/status | Return all bathroom statuses |
-| POST | /api/bathrooms/:id/flag | Flag a bathroom |
+| POST | /api/bathrooms/:id/flag | Flag a bathroom, defaults to low |
 | GET | /api/bathrooms/:id/flag | Bookmark or QR flag action |
+| POST | /api/bathrooms/:id/flag/:level | Flag at a severity: low, urgent, or out |
+| GET | /api/bathrooms/:id/flag/:level | Bookmark or QR flag at a severity |
 | POST | /api/bathrooms/:id/confirm | Clear a bathroom flag after restocking |
+
+## Severity and escalation
+
+Three reported levels, lowest to highest: low, urgent, out. A person reports one of
+them. An unattended flag then climbs one rung every 12 hours and stops at out, so a
+low flag reads urgent after 12 hours and out after 24.
+
+Nothing stores the escalated value. The server records only when a room was flagged
+and at what level, and computes the current level on every request. Confirming a
+restock clears the timestamp.
+
+Responses carry both the computed `state` and the human `reported` level. Where they
+differ, the board and the phone both say so, because otherwise the board asserts
+"OUT OF PAPER" when nobody said that. Keep that distinction if you touch this.
+
+## Alexa
+
+backend/alexa.js emulates a Philips Hue bridge on the LAN so Alexa can discover
+virtual switches, four per bathroom: low, urgent, out, and restocked. Turning one on
+performs that action. Turning a level switch off confirms the restock. There is no
+Amazon account, no account linking, and nothing exposed to the internet.
+
+Setup is an Alexa Routine per phrase: trigger on what you want to say, action is
+turning on the matching switch. Alexa cannot answer questions about status this way.
+Reading state back requires a real custom skill with a public HTTPS endpoint.
+
+Echo devices only look for a Hue bridge on port 80, which needs elevated privileges.
+ALEXA_PORT overrides it for testing, but discovery will not work anywhere except 80.
+Set ALEXA=off to disable the emulation entirely. If the port cannot be bound the app
+logs one line and keeps serving normally.
+
+Verified so far: SSDP discovery replies correctly to a real M-SEARCH, the Hue API
+serves description, pairing, light list, and state changes, and switching a light
+moves the real bathroom state. Not verified: discovery by an actual Echo, which
+needs the backend running on port 80 on an always-on host.
 
 API_TOKEN is optional. If set, flag and confirm require x-api-token or a Bearer authorization header.
 State is stored in backend/data.json on durable storage. PORT selects the HTTP port and defaults to 3000.
