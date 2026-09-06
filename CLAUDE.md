@@ -13,7 +13,22 @@ TP Refresher is a closet toilet-paper status board. A phone page flags a bathroo
 - LCD: TFT MOSI 13, MISO 12, SCLK 14, CS 15, DC 2, backlight 27
 - Touch: shared SPI, CS 33, IRQ 36
 
-The firmware uses TFT_eSPI with the ST7796 driver and XPT2046_Touchscreen. Touch panels can vary, so calibration may be needed.
+The firmware uses TFT_eSPI with the ST7796 driver and XPT2046_Touchscreen.
+
+Orientation is rotated 180 degrees (tft.setRotation(2)) so the USB cable exits the
+top of the board and does not block a stand. Touch mapping is inverted on BOTH axes
+to match: X because of that rotation, Y because the panel runs opposite the display
+regardless. If you change the rotation, change both axis mappings with it, and
+verify against the logged touch coordinates before assuming it is right.
+
+## Current state, verified on hardware 2026-09-06
+
+Working and confirmed on the physical board: display, resistive touch on all three
+cards, Wi-Fi, five second polling, over-the-air updates, and UDP log streaming.
+The board runs on wall power away from any computer and is updated over Wi-Fi.
+
+Not done: the backend has no durable home. It runs by hand on a laptop, so the
+board shows OFFLINE whenever that laptop sleeps. That is the next real task.
 
 ## Repository layout
 - backend/: Express server, configuration, durable state, and API

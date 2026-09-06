@@ -44,10 +44,12 @@ uint16_t colorFor(const String& state) {
   if (state == "needs") return TFT_ORANGE;
   return TFT_DARKGREEN;
 }
+// Sits below the title, not beside it. The title is wide enough at font 4 that a
+// badge on the same line clips its last letters when the badge clears its box.
 void drawStatusBadge() {
-  tft.fillRect(SCREEN_W - 100, 20, 92, 22, TFT_DARKGREEN);
+  tft.fillRect(SCREEN_W - 100, 44, 92, 22, TFT_DARKGREEN);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(online ? TFT_GREENYELLOW : TFT_ORANGE, TFT_DARKGREEN);
-  tft.drawString(online ? "LIVE" : "OFFLINE", SCREEN_W - 12, 24, 2); tft.setTextDatum(TL_DATUM);
+  tft.drawString(online ? "LIVE" : "OFFLINE", SCREEN_W - 12, 46, 2); tft.setTextDatum(TL_DATUM);
 }
 void drawHeader() {
   tft.fillRect(0, 0, SCREEN_W, 72, TFT_DARKGREEN);
@@ -135,9 +137,10 @@ bool fetchStatus() {
 void handleTouch() {
   if (!touch.touched()) return;
   TS_Point raw = touch.getPoint();
-  const int x = constrain(map(raw.x, TOUCH_X_MIN, TOUCH_X_MAX, 0, SCREEN_W - 1), 0, SCREEN_W - 1);
-  // Panel Y runs opposite the display, so map from max to min.
-  const int y = constrain(map(raw.y, TOUCH_Y_MAX, TOUCH_Y_MIN, 0, SCREEN_H - 1), 0, SCREEN_H - 1);
+  // Both axes are inverted relative to the panel: Y because the panel runs opposite
+  // the display, X because the whole screen is rotated 180 degrees.
+  const int x = constrain(map(raw.x, TOUCH_X_MAX, TOUCH_X_MIN, 0, SCREEN_W - 1), 0, SCREEN_W - 1);
+  const int y = constrain(map(raw.y, TOUCH_Y_MIN, TOUCH_Y_MAX, 0, SCREEN_H - 1), 0, SCREEN_H - 1);
   logf("touch raw=(%d,%d) mapped=(%d,%d)\n", raw.x, raw.y, x, y);
   for (size_t i = 0; i < bathroomCount; ++i) {
     const int top = 84 + static_cast<int>(i) * 124;
@@ -169,7 +172,7 @@ void startOta() {
   logf("OTA ready at %s.local, build %s %s\n", OTA_HOSTNAME, __DATE__, __TIME__);
 }
 void setup() {
-  Serial.begin(115200); pinMode(27, OUTPUT); digitalWrite(27, HIGH); tft.init(); tft.setRotation(0);
+  Serial.begin(115200); pinMode(27, OUTPUT); digitalWrite(27, HIGH); tft.init(); tft.setRotation(2);  // 180 degrees, so the USB cable exits the top
   SPI.begin(TOUCH_SCK_PIN, TOUCH_MISO_PIN, TOUCH_MOSI_PIN, TOUCH_CS_PIN); touch.begin(); touch.setRotation(0);
   showMessage("TP Refresher", "Connecting to Wi-Fi...");
   WiFi.setHostname(OTA_HOSTNAME); online = connectWiFi();
