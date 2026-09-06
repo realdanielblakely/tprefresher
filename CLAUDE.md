@@ -2,7 +2,7 @@
 
 ## What this project is
 
-TP Refresher is a closet toilet-paper status board. A phone page flags a bathroom when it needs paper, an ESP32 display shows the current status, and tapping a flagged display card confirms the restock. Flags are amber for 24 hours, then become red and overdue.
+TP Refresher is a closet toilet-paper status board. A phone page flags a bathroom when it needs paper, an ESP32 display shows the current status, and tapping a flagged display card confirms the restock. Flags carry a severity, and an unattended one climbs a level every 12 hours.
 
 ## Hardware
 
@@ -27,9 +27,36 @@ Working and confirmed on the physical board: display, resistive touch on all thr
 cards, Wi-Fi, five second polling, over-the-air updates, and UDP log streaming.
 The board runs on wall power away from any computer and is updated over Wi-Fi.
 
-Not done: the backend has no durable home. It runs by hand on a laptop, so the
-board shows OFFLINE whenever that laptop sleeps. That is the next real task, and
-Alexa voice control depends on it, since a sleeping laptop answers nothing.
+The backend is deployed on the always-on Mac and survives process death and reboot.
+Nothing needs a developer laptop to be awake any more.
+
+## Deployment
+
+The backend runs on the always-on Mac (user `deploy`, host `server.local`, LAN
+address 192.168.1.x at time of writing) as a launchd agent.
+
+- Working copy: `/Users/deploy/tprefresher`
+- Node: `/Users/deploy/.local/bin/node`, v22
+- Job: `~/Library/LaunchAgents/com.tprefresher.backend.plist`, RunAtLoad and
+  KeepAlive, so launchd restarts it if the process dies
+- Log: `/Users/deploy/Library/Logs/tprefresher.log`
+- State: `/Users/deploy/tprefresher/backend/data.json`, survives restarts
+
+Restart it with:
+
+    launchctl unload ~/Library/LaunchAgents/com.tprefresher.backend.plist
+    launchctl load ~/Library/LaunchAgents/com.tprefresher.backend.plist
+
+That machine is on AC with `pmset sleep 0`, so it does not idle sleep. Closing the
+lid is still a sleep, and a sleeping host serves nothing.
+
+This is a LaunchAgent, not a LaunchDaemon, so it starts on user login rather than at
+boot. After a reboot with nobody logged in, it will not be running.
+
+The working copy was copied from a developer machine, not cloned, because the GitHub
+CLI is not set up on the host. `git pull` there will need credentials before it works.
+`firmware/include/secrets.h` was deliberately excluded, since the backend needs no
+secrets and the firmware ones should not spread to another machine.
 
 ## Repository layout
 - backend/: Express server, configuration, durable state, and API
@@ -80,7 +107,9 @@ logs one line and keeps serving normally.
 Verified so far: SSDP discovery replies correctly to a real M-SEARCH, the Hue API
 serves description, pairing, light list, and state changes, and switching a light
 moves the real bathroom state. Not verified: discovery by an actual Echo, which
-needs the backend running on port 80 on an always-on host.
+needs the backend running on port 80 on an always-on host. This deployment
+binds port 80 as a normal user with no elevation, contrary to the usual assumption
+about low ports on macOS.
 
 API_TOKEN is optional. If set, flag and confirm require x-api-token or a Bearer authorization header.
 State is stored in backend/data.json on durable storage. PORT selects the HTTP port and defaults to 3000.
@@ -123,11 +152,12 @@ debuggable once it is mounted somewhere inconvenient. Listen with:
   polling, and over-the-air updates are all confirmed working on the board.
 - Touch is calibrated. The panel Y axis runs opposite the display, so the mapping
   is inverted on purpose. Do not "fix" it back.
-- The backend still has no durable deployment. It runs by hand on a laptop, which
-  means the board goes OFFLINE whenever that machine sleeps.
+- The backend is deployed on the host under launchd. Verified: it restarts after a
+  kill -9, and bathroom state survives the restart.
 - Both the board and the backend host take addresses from DHCP. The board does not
   care, because it is reachable as tprefresher.local. The backend host address is
-  compiled into the firmware, so if it moves the board cannot find it.
+  compiled into the firmware, so if the host moves, the board cannot find it. the host
+  has no DHCP reservation yet. This is the largest remaining fragility.
 
 ## Owner preferences
 
@@ -137,10 +167,12 @@ debuggable once it is mounted somewhere inconvenient. Listen with:
 
 ## Good next tasks
 
-1. Deploy the backend on a host that stays awake, with durable disk storage.
-2. Give that host a DHCP reservation, or the compiled-in API_BASE_URL goes stale.
-3. Make the server address settable on the board instead of compiled in, so moving
+1. Give the host a DHCP reservation at 192.168.1.x, or the compiled-in API_BASE_URL
+   goes stale and the board cannot find the server.
+2. Make the server address settable on the board instead of compiled in, so moving
    the backend does not require a firmware push.
+3. Set up GitHub credentials on the host so the deployment can be updated with a pull
+   rather than a file copy.
 4. Rename the bathroom rooms and display labels if household names differ.
 5. Add Home Assistant integration. GET /api/status works as a REST sensor with no
    changes. Driving flags from HA is cleaner over MQTT.
