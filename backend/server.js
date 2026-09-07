@@ -1,6 +1,8 @@
 const express = require('express');
 const path = require('path');
 const { allStatuses, update, levels } = require('./store');
+const laundry = require('./laundry');
+const notify = require('./notify');
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const apiToken = process.env.API_TOKEN || '';
@@ -22,7 +24,26 @@ function knownId(req, res, next) {
   return next();
 }
 app.get('/api/status', async (_req, res, next) => {
-  try { res.json({ bathrooms: await allStatuses() }); } catch (error) { next(error); }
+  // The board fetches one payload for both screens, so laundry rides along here.
+  try { res.json({ bathrooms: await allStatuses(), laundry: await laundry.all() }); } catch (error) { next(error); }
+});
+app.get('/api/laundry', async (_req, res, next) => {
+  try { res.json({ machines: await laundry.all() }); } catch (error) { next(error); }
+});
+function knownMachine(req, res, next) {
+  const id = String(req.params.id || '').toLowerCase();
+  if (!laundry.machines.some((entry) => entry.id === id)) return res.status(404).json({ error: 'Unknown machine' });
+  req.machineId = id;
+  return next();
+}
+app.post('/api/laundry/:id/start', requireToken, knownMachine, async (req, res, next) => {
+  try {
+    const minutes = Number(req.query.minutes || req.body?.minutes || 0) || undefined;
+    res.json(await laundry.start(req.machineId, minutes));
+  } catch (error) { next(error); }
+});
+app.post('/api/laundry/:id/clear', requireToken, knownMachine, async (req, res, next) => {
+  try { res.json(await laundry.clear(req.machineId)); } catch (error) { next(error); }
 });
 function knownLevel(req, res, next) {
   const level = String(req.params.level || req.query.level || req.body?.level || 'low').toLowerCase();
@@ -49,6 +70,14 @@ app.post('/api/bathrooms/:id/confirm', requireToken, knownId, async (req, res, n
     return res.json(result);
   } catch (error) { next(error); }
 });
+// Poll for finished cycles. Cheap, and it means a reminder still fires when nobody
+// has the phone page or the board in front of them.
+setInterval(async () => {
+  try { for (const machine of await laundry.due()) await notify.laundryDone(machine); }
+  catch (error) { console.log('laundry check failed:', error.message); }
+}, 30000);
+console.log(`notify: ${notify.describe()}`);
+
 // Alexa discovery runs beside the main server. It is optional: if the port is not
 // available the app keeps serving normally and just logs why.
 if (process.env.ALEXA !== 'off') {

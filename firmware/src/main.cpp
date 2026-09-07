@@ -52,6 +52,28 @@ Bathroom bathrooms[8]; size_t bathroomCount = 0;
 // Last values actually painted, so refreshes only touch what changed.
 String paintedState[8]; String paintedName[8];
 size_t paintedCount = 0; bool paintedOnline = false; bool screenReady = false;
+
+// Second screen: laundry timers. The timers themselves live on the server, so a
+// reboot or a firmware push never loses a running cycle.
+struct Machine { String id; String name; String state; long remaining; };
+Machine machines[4]; size_t machineCount = 0;
+unsigned long lastFetchMs = 0;
+int screen = 0;  // 0 status, 1 laundry
+String paintedMachine[4]; long paintedRemaining[4] = {-1, -1, -1, -1};
+bool laundryReady = false;
+// Tabs sit under the header, not at the bottom edge. Resistive panels are
+// unreliable at the extremes, and the very bottom may be unreachable entirely.
+constexpr int TAB_Y = 78, TAB_H = 38;
+constexpr int CARD_Y = 128, CARD_H = 100, CARD_GAP = 10;
+constexpr int LCARD_Y = 128, LCARD_H = 148, LCARD_GAP = 16;
+
+
+long remainingNow(size_t index) {
+  if (machines[index].state != "running") return machines[index].remaining;
+  const long elapsed = (millis() - lastFetchMs) / 1000;
+  const long left = machines[index].remaining - elapsed;
+  return left > 0 ? left : 0;
+}
 // Until the clock syncs, treat it as daytime rather than guessing dark.
 bool isNight() {
   if (!clockReady) return false;
@@ -98,39 +120,122 @@ void drawHeader() {
   drawStatusBadge();
 }
 void drawCard(size_t index) {
-  const Bathroom& room = bathrooms[index]; const int y = 84 + static_cast<int>(index) * 124;
+  const Bathroom& room = bathrooms[index]; const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
   const uint16_t accent = colorFor(room.state);
-  tft.fillRoundRect(10, y, 300, 108, 12, TFT_WHITE); tft.fillRoundRect(10, y, 12, 108, 12, accent);
+  tft.fillRoundRect(10, y, 300, CARD_H, 12, TFT_WHITE); tft.fillRoundRect(10, y, 12, CARD_H, 12, accent);
   tft.setTextColor(TFT_DARKGREY, TFT_WHITE); tft.drawString(room.name, 30, y + 14, 4);
   tft.setTextColor(accent, TFT_WHITE);
   tft.drawString(labelFor(room.state), 31, y + 55, 2);
   // Say so when time bumped this up, so nobody thinks a person reported it.
   if (room.reported.length() && room.reported != room.state) {
     tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
-    tft.drawString(String("was ") + labelFor(room.reported), 31, y + 83, 2);
+    tft.drawString(String("was ") + labelFor(room.reported), 31, y + CARD_H - 22, 2);
   }
   tft.setTextDatum(TR_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
-  tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", 298, y + 83, 2); tft.setTextDatum(TL_DATUM);
+  tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", 298, y + CARD_H - 22, 2); tft.setTextDatum(TL_DATUM);
 }
 void drawCardNote(size_t index, const char* note) {
-  const int y = 84 + static_cast<int>(index) * 124;
-  tft.fillRect(140, y + 76, 158, 22, TFT_WHITE);
+  const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
+  tft.fillRect(140, y + CARD_H - 26, 158, 22, TFT_WHITE);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
-  tft.drawString(note, 298, y + 83, 2); tft.setTextDatum(TL_DATUM);
+  tft.drawString(note, 298, y + CARD_H - 22, 2); tft.setTextDatum(TL_DATUM);
 }
 void rememberPainted() {
   for (size_t i = 0; i < bathroomCount; ++i) { paintedState[i] = bathrooms[i].state + "/" + bathrooms[i].reported; paintedName[i] = bathrooms[i].name; }
   paintedCount = bathroomCount; paintedOnline = online; screenReady = true;
 }
+void drawTabs() {
+  const uint16_t activeBg = TFT_DARKGREEN, idleBg = tft.color565(200, 205, 200);
+  tft.fillRect(0, TAB_Y, SCREEN_W / 2, TAB_H, screen == 0 ? activeBg : idleBg);
+  tft.fillRect(SCREEN_W / 2, TAB_Y, SCREEN_W / 2, TAB_H, screen == 1 ? activeBg : idleBg);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(screen == 0 ? TFT_WHITE : TFT_DARKGREY, screen == 0 ? activeBg : idleBg);
+  tft.drawString("PAPER", SCREEN_W / 4, TAB_Y + TAB_H / 2, 2);
+  tft.setTextColor(screen == 1 ? TFT_WHITE : TFT_DARKGREY, screen == 1 ? activeBg : idleBg);
+  tft.drawString("LAUNDRY", SCREEN_W * 3 / 4, TAB_Y + TAB_H / 2, 2);
+  tft.setTextDatum(TL_DATUM);
+}
+uint16_t machineColor(const String& state) {
+  if (state == "done") return TFT_RED;
+  if (state == "running") return tft.color565(0, 122, 190);
+  return TFT_DARKGREY;
+}
+void formatRemaining(long seconds, char* out, size_t size) {
+  if (seconds < 0) seconds = 0;
+  snprintf(out, size, "%02ld:%02ld", seconds / 60, seconds % 60);
+}
+// Only the digits change every second, so this repaints just that strip.
+void drawMachineTime(size_t index) {
+  const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
+  const Machine& machine = machines[index];
+  tft.fillRect(20, y + 44, 280, 56, TFT_WHITE);
+  tft.setTextDatum(MC_DATUM);
+  if (machine.state == "idle") {
+    tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+    tft.drawString("READY", SCREEN_W / 2, y + 70, 4);
+  } else {
+    char buffer[8]; formatRemaining(remainingNow(index), buffer, sizeof(buffer));
+    tft.setTextColor(machineColor(machine.state), TFT_WHITE);
+    tft.drawString(machine.state == "done" ? "DONE" : buffer, SCREEN_W / 2, y + 70, machine.state == "done" ? 4 : 7);
+  }
+  tft.setTextDatum(TL_DATUM);
+}
+void drawMachine(size_t index) {
+  const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
+  const Machine& machine = machines[index];
+  const uint16_t accent = machineColor(machine.state);
+  tft.fillRoundRect(10, y, 300, LCARD_H, 12, TFT_WHITE);
+  tft.fillRoundRect(10, y, 12, LCARD_H, 12, accent);
+  tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+  tft.drawString(machine.name, 30, y + 12, 4);
+  drawMachineTime(index);
+  tft.setTextDatum(BC_DATUM); tft.setTextColor(accent, TFT_WHITE);
+  const char* hint = machine.state == "idle" ? "Tap to start"
+                   : machine.state == "done" ? "Tap to clear" : "Tap to cancel";
+  tft.drawString(hint, SCREEN_W / 2, y + LCARD_H - 8, 2);
+  tft.setTextDatum(TL_DATUM);
+}
+void drawMachineNote(size_t index, const char* note) {
+  const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
+  tft.fillRect(20, y + LCARD_H - 24, 280, 20, TFT_WHITE);
+  tft.setTextDatum(BC_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+  tft.drawString(note, SCREEN_W / 2, y + LCARD_H - 8, 2); tft.setTextDatum(TL_DATUM);
+}
+void drawLaundryScreen() {
+  tft.fillScreen(TFT_LIGHTGREY); drawHeader();
+  for (size_t i = 0; i < machineCount; ++i) {
+    drawMachine(i);
+    paintedMachine[i] = machines[i].state; paintedRemaining[i] = remainingNow(i);
+  }
+  if (machineCount == 0) {
+    tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_LIGHTGREY);
+    tft.drawString("No laundry data", SCREEN_W / 2, 240, 4); tft.setTextDatum(TL_DATUM);
+  }
+  drawTabs(); laundryReady = true;
+}
 void drawScreen() {
   tft.fillScreen(TFT_LIGHTGREY); drawHeader();
   for (size_t i = 0; i < bathroomCount; ++i) drawCard(i);
-  tft.setTextColor(TFT_DARKGREY, TFT_LIGHTGREY); tft.setTextDatum(BC_DATUM);
-  tft.drawString("Tap a bathroom to update it", SCREEN_W / 2, SCREEN_H - 12, 2); tft.setTextDatum(TL_DATUM);
+  drawTabs();
   rememberPainted();
 }
+void renderLaundry() {
+  if (!laundryReady) { drawLaundryScreen(); return; }
+  for (size_t i = 0; i < machineCount; ++i) {
+    const long left = remainingNow(i);
+    if (machines[i].state != paintedMachine[i]) { drawMachine(i); paintedMachine[i] = machines[i].state; paintedRemaining[i] = left; continue; }
+    if (left != paintedRemaining[i]) { drawMachineTime(i); paintedRemaining[i] = left; }
+  }
+}
 // Repaint only what changed. A full redraw every poll makes the screen visibly flash.
+// A finished cycle should catch the eye even from the other screen.
+void noticeLaundryChanges() {
+  for (size_t i = 0; i < machineCount; ++i) {
+    if (machines[i].state == "done" && paintedMachine[i] != "done") wakeScreen();
+  }
+}
 void renderUpdates() {
+  if (screen == 1) { renderLaundry(); return; }
   if (!screenReady || bathroomCount != paintedCount) { drawScreen(); return; }
   if (online != paintedOnline) { drawStatusBadge(); paintedOnline = online; }
   for (size_t i = 0; i < bathroomCount; ++i) {
@@ -168,7 +273,7 @@ bool fetchStatus() {
   const int code = http.GET();
   logf("GET %s/api/status -> %d\n", API_BASE_URL, code);
   if (code != HTTP_CODE_OK) { http.end(); online = false; return false; }
-  DynamicJsonDocument document(4096); const DeserializationError error = deserializeJson(document, http.getStream()); http.end();
+  DynamicJsonDocument document(8192); const DeserializationError error = deserializeJson(document, http.getStream()); http.end();
   if (error) { online = false; return false; }
   bathroomCount = 0;
   for (JsonObject item : document["bathrooms"].as<JsonArray>()) {
@@ -179,24 +284,55 @@ bool fetchStatus() {
     bathrooms[bathroomCount].reported = item["reported"].isNull() ? "" : item["reported"].as<const char*>();
     bathrooms[bathroomCount].flaggedAt = item["flaggedAt"].as<const char*>(); ++bathroomCount;
   }
+  machineCount = 0;
+  for (JsonObject item : document["laundry"].as<JsonArray>()) {
+    if (machineCount >= 4) break;
+    machines[machineCount].id = item["id"].as<const char*>();
+    machines[machineCount].name = item["name"].as<const char*>();
+    machines[machineCount].state = item["state"].as<const char*>();
+    machines[machineCount].remaining = item["remainingSeconds"] | 0;
+    ++machineCount;
+  }
+  lastFetchMs = millis();
   online = true; return true;
 }
 void handleTouch() {
   if (!touch.touched()) return;
   TS_Point raw = touch.getPoint();
-  // First touch on a dimmed screen just wakes it, so nobody flags a room by
-  // reaching over to see what it says.
-  const bool wasDim = backlightLevel < fullLevel();
+  // A touch on a dimmed screen both wakes it and does what you tapped. Swallowing
+  // that first touch avoided stray flags but made the board feel broken.
   wakeScreen();
-  if (wasDim) { while (touch.touched()) delay(10); return; }
-  // Both axes are inverted relative to the panel: Y because the panel runs opposite
-  // the display, X because the whole screen is rotated 180 degrees.
-  const int x = constrain(map(raw.x, TOUCH_X_MAX, TOUCH_X_MIN, 0, SCREEN_W - 1), 0, SCREEN_W - 1);
+  // X is NOT inverted. The 180 degree rotation cancels an inversion the panel
+  // already had, which stayed hidden while every control spanned the full width.
+  // Verified against the tab bar, the first left/right split on this display.
+  const int x = constrain(map(raw.x, TOUCH_X_MIN, TOUCH_X_MAX, 0, SCREEN_W - 1), 0, SCREEN_W - 1);
   const int y = constrain(map(raw.y, TOUCH_Y_MIN, TOUCH_Y_MAX, 0, SCREEN_H - 1), 0, SCREEN_H - 1);
   logf("touch raw=(%d,%d) mapped=(%d,%d)\n", raw.x, raw.y, x, y);
+  if (y >= TAB_Y && y < TAB_Y + TAB_H) {
+    const int wanted = x < SCREEN_W / 2 ? 0 : 1;
+    if (wanted != screen) {
+      screen = wanted;
+      if (screen == 0) { screenReady = false; drawScreen(); } else { laundryReady = false; drawLaundryScreen(); }
+    }
+    while (touch.touched()) delay(10);
+    return;
+  }
+  if (screen == 1) {
+    for (size_t i = 0; i < machineCount; ++i) {
+      const int top = LCARD_Y + static_cast<int>(i) * (LCARD_H + LCARD_GAP);
+      if (x < 10 || x > 310 || y < top || y > top + LCARD_H) continue;
+      const char* action = machines[i].state == "idle" ? "start" : "clear";
+      drawMachineNote(i, "Saving...");
+      requestApi(String("/api/laundry/") + machines[i].id + "/" + action, "POST");
+      fetchStatus(); paintedMachine[i] = ""; renderLaundry();
+      while (touch.touched()) delay(10);
+      return;
+    }
+    return;
+  }
   for (size_t i = 0; i < bathroomCount; ++i) {
-    const int top = 84 + static_cast<int>(i) * 124;
-    if (x >= 10 && x <= 310 && y >= top && y <= top + 108) {
+    const int top = CARD_Y + static_cast<int>(i) * (CARD_H + CARD_GAP);
+    if (x >= 10 && x <= 310 && y >= top && y <= top + CARD_H) {
       const char* action = bathrooms[i].state == "ok" ? "flag" : "confirm";
       drawCardNote(i, "Saving...");
       if (!requestApi(String("/api/bathrooms/") + bathrooms[i].id + "/" + action, "POST")) { drawCardNote(i, "Offline, try again"); delay(1200); }
@@ -251,7 +387,9 @@ void loop() {
     otaStarted = false;
   }
   handleTouch();
-  if (millis() - lastPoll >= POLL_INTERVAL_MS) { lastPoll = millis(); fetchStatus(); renderUpdates(); }
+  if (millis() - lastPoll >= POLL_INTERVAL_MS) { lastPoll = millis(); fetchStatus(); noticeLaundryChanges(); renderUpdates(); }
+  static unsigned long lastTick = 0;
+  if (screen == 1 && millis() - lastTick >= 500) { lastTick = millis(); renderLaundry(); }
   if (millis() - lastActivity >= BACKLIGHT_WAKE_MS && backlightLevel != idleLevel()) setBacklight(idleLevel());
   delay(20);
 }

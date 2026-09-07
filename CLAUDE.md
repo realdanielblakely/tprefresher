@@ -109,6 +109,54 @@ state names in this repo, change them there too: the mapping lives in
 | POST | /api/bathrooms/:id/flag/:level | Flag at a severity: low, urgent, or out |
 | GET | /api/bathrooms/:id/flag/:level | Bookmark or QR flag at a severity |
 | POST | /api/bathrooms/:id/confirm | Clear a bathroom flag after restocking |
+| GET | /api/laundry | Wash and dry timer state |
+| POST | /api/laundry/:id/start | Start a cycle, optional ?minutes= |
+| POST | /api/laundry/:id/clear | Acknowledge a finished cycle, or cancel a running one |
+
+GET /api/status carries both bathrooms and laundry, so the display fetches one
+payload for both of its screens.
+
+## Two screens
+
+The display has a tab bar under the header: PAPER and LAUNDRY. Tabs sit there rather
+than at the bottom edge because a strip in the last 36 pixels is a poor target.
+
+Layout is driven by constants at the top of main.cpp: TAB_Y, CARD_Y, CARD_H,
+CARD_GAP for the paper screen, and LCARD_Y, LCARD_H, LCARD_GAP for laundry. Move the
+constants, not the arithmetic.
+
+## Laundry timers
+
+Two machines, wash and dry, defaulting to 35 and 60 minutes. Override with
+WASH_MINUTES and DRY_MINUTES.
+
+The timers live on the server, in backend/laundry.json, not on the display. A reboot
+or a firmware push never loses a running cycle, the alert fires from the machine with
+internet, and the phone or Alexa could drive them later.
+
+Nothing stores a "done" flag. The server records when a cycle started and how long it
+should run, and computes the rest, the same way bathroom escalation works.
+
+A finished cycle emails, then repeats every LAUNDRY_REPEAT_MINUTES (default 15) up to
+LAUNDRY_MAX_REMINDERS (default 3) until someone taps to clear it. Laundry sitting in
+the machine is the actual problem, so a single alert missed while cooking is useless.
+
+On the display: tap an idle machine to start it, a running one to cancel, a finished
+one to clear. A cycle finishing wakes the screen even from the paper tab.
+
+## Email alerts
+
+Configured entirely by environment and a no-op when unset, so the app runs fine
+without credentials. Set on the deployment host:
+
+- SMTP_HOST, SMTP_PORT (default 465), SMTP_USER, SMTP_PASS
+- MAIL_FROM (defaults to SMTP_USER), MAIL_TO
+
+MAIL_TO takes several comma separated addresses. Most carriers run an email to SMS
+gateway, so one of them can be a phone number and arrive as a text.
+
+For Gmail this must be an app password, which requires 2-Step Verification. A normal
+account password will not authenticate.
 
 ## Severity and escalation
 
@@ -209,11 +257,14 @@ debuggable once it is mounted somewhere inconvenient. Listen with:
    the backend does not require a firmware push.
 3. Set up GitHub credentials on the host so the deployment can be updated with a pull
    rather than a file copy.
-4. Rename the bathroom rooms and display labels if household names differ.
-5. Add Home Assistant integration. GET /api/status works as a REST sensor with no
+4. Set SMTP credentials on the host so laundry alerts actually send. Until then the
+   server logs what it would have sent.
+5. Replace the default 35 and 60 minute cycle times with the real ones.
+6. Rename the bathroom rooms and display labels if household names differ.
+7. Add Home Assistant integration. GET /api/status works as a REST sensor with no
    changes. Driving flags from HA is cleaner over MQTT.
-6. Print QR codes for the GET flag routes and put them in the bathrooms.
-7. Enable and document API_TOKEN for deployments beyond a trusted LAN.
+8. Print QR codes for the GET flag routes and put them in the bathrooms.
+9. Enable and document API_TOKEN for deployments beyond a trusted LAN.
 
 ## Pitfalls
 
@@ -231,3 +282,12 @@ debuggable once it is mounted somewhere inconvenient. Listen with:
   makes outbound requests but drops inbound packets, so OTA and ping fail.
 - The addApbChangeCallback duplicate warning at boot is harmless. It comes from
   TFT_eSPI and SPI both registering the same callback.
+- Touch X is NOT inverted, even though the display is rotated 180 degrees and Y is.
+  The rotation cancels an inversion the panel already had. This was wrong for a long
+  time without anyone noticing, because every control spanned the full width of the
+  screen, so a mirrored X still landed on the right card. The tab bar was the first
+  left/right split and exposed it immediately. If you add anything else side by side,
+  verify horizontal touch explicitly rather than assuming it works.
+- The panel reaches nearly its full assumed range, x 444..3622 and y 321..3829
+  against assumed 280..3860 and 340..3860. Unreachable edges and bad calibration are
+  both dead ends; they were investigated and ruled out.
