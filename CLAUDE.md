@@ -83,6 +83,17 @@ constants at the top of main.cpp and are meant to be tuned.
 Note the Arduino core here is 2.x, so the LEDC calls are ledcSetup, ledcAttachPin,
 and ledcWrite by channel. Core 3.x replaced those with ledcAttach by pin.
 
+## Tidbyt companion
+
+There is a companion view on a Tidbyt LED display. It does not live in this repo. It
+is at `a separate Tidbyt app directory` on the developer machine and runs
+on the host beside the backend, reading `http://127.0.0.1:3000` every 300 seconds.
+
+It renders all clear, per room severity, and an explicit NO SIGNAL when the backend
+cannot be reached, rather than leaving a stale all clear on screen. If you change the
+state names in this repo, change them there too: the mapping lives in
+`tprefresher.star`.
+
 ## Repository layout
 - backend/: Express server, configuration, durable state, and API
 - public/: browser phone UI
