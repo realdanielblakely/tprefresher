@@ -16,6 +16,19 @@ constexpr int SCREEN_W = 320, SCREEN_H = 480;
 constexpr int TOUCH_CS_PIN = 33, TOUCH_IRQ_PIN = 36;
 constexpr int TOUCH_SCK_PIN = 14, TOUCH_MISO_PIN = 12, TOUCH_MOSI_PIN = 13;
 constexpr unsigned long POLL_INTERVAL_MS = 5000, WIFI_TIMEOUT_MS = 15000;
+// Backlight. The panel is far too bright left at full on a wall all day, so it
+// idles dim and wakes to full on a touch or a real status change. Tune these.
+constexpr int BACKLIGHT_PIN = 27, BACKLIGHT_CHANNEL = 0;
+constexpr int DAY_IDLE = 40, DAY_FULL = 255;
+constexpr int NIGHT_IDLE = 8, NIGHT_FULL = 110;
+constexpr int NIGHT_START_HOUR = 22, NIGHT_END_HOUR = 7;
+constexpr unsigned long BACKLIGHT_WAKE_MS = 20000;
+// America/New_York with US daylight saving rules. Change this one string to move
+// the board to another timezone.
+constexpr const char* TIMEZONE = "EST5EDT,M3.2.0,M11.1.0";
+unsigned long lastActivity = 0;
+int backlightLevel = DAY_FULL;
+bool clockReady = false;
 // Typical XPT2046 range for this panel. Calibrate if taps are offset.
 constexpr int TOUCH_X_MIN = 280, TOUCH_X_MAX = 3860;
 constexpr int TOUCH_Y_MIN = 340, TOUCH_Y_MAX = 3860;
@@ -39,6 +52,26 @@ Bathroom bathrooms[8]; size_t bathroomCount = 0;
 // Last values actually painted, so refreshes only touch what changed.
 String paintedState[8]; String paintedName[8];
 size_t paintedCount = 0; bool paintedOnline = false; bool screenReady = false;
+// Until the clock syncs, treat it as daytime rather than guessing dark.
+bool isNight() {
+  if (!clockReady) return false;
+  struct tm now;
+  if (!getLocalTime(&now, 50)) return false;
+  return NIGHT_START_HOUR > NIGHT_END_HOUR
+    ? (now.tm_hour >= NIGHT_START_HOUR || now.tm_hour < NIGHT_END_HOUR)
+    : (now.tm_hour >= NIGHT_START_HOUR && now.tm_hour < NIGHT_END_HOUR);
+}
+int idleLevel() { return isNight() ? NIGHT_IDLE : DAY_IDLE; }
+int fullLevel() { return isNight() ? NIGHT_FULL : DAY_FULL; }
+// Fade rather than step, so waking does not read as a flash in a dark room.
+void setBacklight(int target) {
+  target = constrain(target, 0, 255);
+  if (target == backlightLevel) return;
+  const int step = target > backlightLevel ? 6 : -6;
+  while (abs(target - backlightLevel) > abs(step)) { backlightLevel += step; ledcWrite(BACKLIGHT_CHANNEL, backlightLevel); delay(8); }
+  backlightLevel = target; ledcWrite(BACKLIGHT_CHANNEL, backlightLevel);
+}
+void wakeScreen() { lastActivity = millis(); setBacklight(fullLevel()); }
 uint16_t colorFor(const String& state) {
   if (state == "out") return TFT_RED;
   if (state == "urgent") return tft.color565(255, 96, 0);
@@ -103,7 +136,7 @@ void renderUpdates() {
   for (size_t i = 0; i < bathroomCount; ++i) {
     const String signature = bathrooms[i].state + "/" + bathrooms[i].reported;
     if (signature == paintedState[i] && bathrooms[i].name == paintedName[i]) continue;
-    drawCard(i); paintedState[i] = signature; paintedName[i] = bathrooms[i].name;
+    drawCard(i); paintedState[i] = signature; paintedName[i] = bathrooms[i].name; wakeScreen();
   }
 }
 void showMessage(const char* title, const char* detail) {
@@ -151,6 +184,11 @@ bool fetchStatus() {
 void handleTouch() {
   if (!touch.touched()) return;
   TS_Point raw = touch.getPoint();
+  // First touch on a dimmed screen just wakes it, so nobody flags a room by
+  // reaching over to see what it says.
+  const bool wasDim = backlightLevel < fullLevel();
+  wakeScreen();
+  if (wasDim) { while (touch.touched()) delay(10); return; }
   // Both axes are inverted relative to the panel: Y because the panel runs opposite
   // the display, X because the whole screen is rotated 180 degrees.
   const int x = constrain(map(raw.x, TOUCH_X_MAX, TOUCH_X_MIN, 0, SCREEN_W - 1), 0, SCREEN_W - 1);
@@ -170,6 +208,15 @@ void handleTouch() {
   }
 }
 }
+void syncClock() {
+  configTzTime(TIMEZONE, "pool.ntp.org", "time.nist.gov");
+  struct tm now;
+  clockReady = getLocalTime(&now, 6000);
+  if (clockReady) logf("clock synced: %04d-%02d-%02d %02d:%02d local, night mode %s\n",
+                       now.tm_year + 1900, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min,
+                       isNight() ? "on" : "off");
+  else logf("clock sync failed, staying on daytime brightness\n");
+}
 void startOta() {
   ArduinoOTA.setHostname(OTA_HOSTNAME);
   ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -186,7 +233,10 @@ void startOta() {
   logf("OTA ready at %s.local, build %s %s\n", OTA_HOSTNAME, __DATE__, __TIME__);
 }
 void setup() {
-  Serial.begin(115200); pinMode(27, OUTPUT); digitalWrite(27, HIGH); tft.init(); tft.setRotation(2);  // 180 degrees, so the USB cable exits the top
+  Serial.begin(115200);
+  ledcSetup(BACKLIGHT_CHANNEL, 5000, 8); ledcAttachPin(BACKLIGHT_PIN, BACKLIGHT_CHANNEL);
+  ledcWrite(BACKLIGHT_CHANNEL, DAY_FULL); lastActivity = millis();
+  tft.init(); tft.setRotation(2);  // 180 degrees, so the USB cable exits the top
   SPI.begin(TOUCH_SCK_PIN, TOUCH_MISO_PIN, TOUCH_MOSI_PIN, TOUCH_CS_PIN); touch.begin(); touch.setRotation(0);
   showMessage("TP Refresher", "Connecting to Wi-Fi...");
   WiFi.setHostname(OTA_HOSTNAME); online = connectWiFi();
@@ -195,12 +245,13 @@ void setup() {
 void loop() {
   static bool otaStarted = false;
   if (WiFi.status() == WL_CONNECTED) {
-    if (!otaStarted) { startOta(); otaStarted = true; }
+    if (!otaStarted) { startOta(); syncClock(); otaStarted = true; }
     ArduinoOTA.handle();
   } else {
     otaStarted = false;
   }
   handleTouch();
   if (millis() - lastPoll >= POLL_INTERVAL_MS) { lastPoll = millis(); fetchStatus(); renderUpdates(); }
+  if (millis() - lastActivity >= BACKLIGHT_WAKE_MS && backlightLevel != idleLevel()) setBacklight(idleLevel());
   delay(20);
 }

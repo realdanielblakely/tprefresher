@@ -58,6 +58,31 @@ CLI is not set up on the host. `git pull` there will need credentials before it 
 `firmware/include/secrets.h` was deliberately excluded, since the backend needs no
 secrets and the firmware ones should not spread to another machine.
 
+## Backlight
+
+The panel is driven by PWM on GPIO 27 through LEDC channel 0, not switched fully on.
+Left at full brightness on a wall it is unpleasant, especially at night.
+
+It idles dim and fades to full when something happens: a touch, or a real change in
+a room's status, so dimming never costs you an alert. It fades back after 20 seconds.
+The first touch on a dimmed screen only wakes it and is swallowed, so nobody flags a
+bathroom by reaching over to read the display in the dark.
+
+Two brightness profiles, chosen by the clock:
+
+| | Idle | Full |
+| --- | --- | --- |
+| Day, 07:00 to 22:00 | 40 | 255 |
+| Night, 22:00 to 07:00 | 8 | 110 |
+
+Time comes from NTP with the timezone set by the TIMEZONE string in main.cpp,
+currently America/New_York with US daylight saving rules. If the clock has not
+synced, the board treats it as daytime rather than guessing dark. All of these are
+constants at the top of main.cpp and are meant to be tuned.
+
+Note the Arduino core here is 2.x, so the LEDC calls are ledcSetup, ledcAttachPin,
+and ledcWrite by channel. Core 3.x replaced those with ledcAttach by pin.
+
 ## Repository layout
 - backend/: Express server, configuration, durable state, and API
 - public/: browser phone UI
