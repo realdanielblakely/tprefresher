@@ -21,6 +21,10 @@ to match: X because of that rotation, Y because the panel runs opposite the disp
 regardless. If you change the rotation, change both axis mappings with it, and
 verify against the logged touch coordinates before assuming it is right.
 
+## Housing
+
+Enclosure brief for this AITRIP integrated board (acrylic sandwich first, then optional print): see [docs/HOUSING.md](docs/HOUSING.md).
+
 ## Current state, verified on hardware 2026-09-06
 
 Working and confirmed on the physical board: display, resistive touch on all three
