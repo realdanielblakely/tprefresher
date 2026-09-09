@@ -80,6 +80,16 @@ pair, since a blanket colour swap happily produces dark text on a dark backgroun
 State colours match the Tidbyt companion exactly, including low being yellow rather
 than amber, so the two displays cannot disagree about what a state looks like.
 
+Each row carries a solid accent block ACCENT_W wide down its left edge, not a thin
+stripe. The colour is the information, so it gets real area and reads from across a
+room. Text starts at TEXT_X and the laundry countdown centres on CONTENT_MID, the
+middle of what is left beside the block, rather than the middle of the card.
+
+The bottom line of a paper card holds one thing, not two. When time escalated a room
+it says so; otherwise it shows the tap hint. They do not fit side by side now that
+the text is inset, and knowing nobody actually reported "out" matters more than a
+hint you can infer by using the board twice.
+
 ## Backlight
 
 The panel is driven by PWM on GPIO 27 through LEDC channel 0, not switched fully on.
