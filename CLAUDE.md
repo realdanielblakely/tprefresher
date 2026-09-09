@@ -16,10 +16,14 @@ TP Refresher is a closet toilet-paper status board. A phone page flags a bathroo
 The firmware uses TFT_eSPI with the ST7796 driver and XPT2046_Touchscreen.
 
 Orientation is rotated 180 degrees (tft.setRotation(2)) so the USB cable exits the
-top of the board and does not block a stand. Touch mapping is inverted on BOTH axes
-to match: X because of that rotation, Y because the panel runs opposite the display
-regardless. If you change the rotation, change both axis mappings with it, and
-verify against the logged touch coordinates before assuming it is right.
+top of the board and does not block a stand.
+
+Touch mapping: Y is inverted, X is not. Y because the panel runs opposite the
+display. X is left alone because the 180 degree rotation cancels an inversion the
+panel already had. That combination looks wrong and is correct, verified against the
+tab bar. If you change the rotation, re-verify BOTH axes against logged coordinates,
+and use something split left from right to check X, because a full width control
+cannot tell you anything about it. See the pitfalls section.
 
 ## Housing
 
@@ -61,6 +65,20 @@ The working copy was copied from a developer machine, not cloned, because the Gi
 CLI is not set up on the host. `git pull` there will need credentials before it works.
 `firmware/include/secrets.h` was deliberately excluded, since the backend needs no
 secrets and the firmware ones should not spread to another machine.
+
+## Colours
+
+The display is dark by design, not for looks. Perceived brightness on this panel is
+as much about how many pixels are lit as it is about the backlight level, and the
+original light grey and white layout was bright at any backlight setting.
+
+The palette lives in constants at the top of main.cpp, built with an RGB565 macro so
+they are compile time values rather than runtime calls. Change those, not the call
+sites. Every text colour is light on dark: check both halves of any setTextColor
+pair, since a blanket colour swap happily produces dark text on a dark background.
+
+State colours match the Tidbyt companion exactly, including low being yellow rather
+than amber, so the two displays cannot disagree about what a state looks like.
 
 ## Backlight
 

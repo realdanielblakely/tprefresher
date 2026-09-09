@@ -32,6 +32,21 @@ bool clockReady = false;
 // Typical XPT2046 range for this panel. Calibrate if taps are offset.
 constexpr int TOUCH_X_MIN = 280, TOUCH_X_MAX = 3860;
 constexpr int TOUCH_Y_MIN = 340, TOUCH_Y_MAX = 3860;
+// Dark palette. A mostly white UI on an LED backlit panel is bright regardless of
+// the backlight setting, because brightness is pixels as much as backlight.
+#define RGB565(r, g, b) ((uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3)))
+constexpr uint16_t COL_BG = RGB565(10, 12, 16);
+constexpr uint16_t COL_CARD = RGB565(26, 30, 36);
+constexpr uint16_t COL_HEADER = RGB565(14, 42, 36);
+constexpr uint16_t COL_TAB_IDLE = RGB565(32, 37, 44);
+constexpr uint16_t COL_TEXT = RGB565(228, 232, 238);
+constexpr uint16_t COL_MUTED = RGB565(130, 140, 150);
+constexpr uint16_t COL_OK = RGB565(34, 197, 94);
+constexpr uint16_t COL_LOW = RGB565(250, 204, 21);
+constexpr uint16_t COL_URGENT = RGB565(249, 115, 22);
+constexpr uint16_t COL_OUT = RGB565(239, 68, 68);
+constexpr uint16_t COL_RUNNING = RGB565(56, 160, 220);
+
 TFT_eSPI tft;
 XPT2046_Touchscreen touch(TOUCH_CS_PIN, TOUCH_IRQ_PIN);
 WiFiUDP logUdp;
@@ -95,10 +110,10 @@ void setBacklight(int target) {
 }
 void wakeScreen() { lastActivity = millis(); setBacklight(fullLevel()); }
 uint16_t colorFor(const String& state) {
-  if (state == "out") return TFT_RED;
-  if (state == "urgent") return tft.color565(255, 96, 0);
-  if (state == "low") return TFT_ORANGE;
-  return TFT_DARKGREEN;
+  if (state == "out") return COL_OUT;
+  if (state == "urgent") return COL_URGENT;
+  if (state == "low") return COL_LOW;
+  return COL_OK;
 }
 const char* labelFor(const String& state) {
   if (state == "out") return "OUT OF PAPER";
@@ -109,35 +124,35 @@ const char* labelFor(const String& state) {
 // Sits below the title, not beside it. The title is wide enough at font 4 that a
 // badge on the same line clips its last letters when the badge clears its box.
 void drawStatusBadge() {
-  tft.fillRect(SCREEN_W - 100, 44, 92, 22, TFT_DARKGREEN);
-  tft.setTextDatum(TR_DATUM); tft.setTextColor(online ? TFT_GREENYELLOW : TFT_ORANGE, TFT_DARKGREEN);
+  tft.fillRect(SCREEN_W - 100, 44, 92, 22, COL_HEADER);
+  tft.setTextDatum(TR_DATUM); tft.setTextColor(online ? COL_OK : COL_URGENT, COL_HEADER);
   tft.drawString(online ? "LIVE" : "OFFLINE", SCREEN_W - 12, 46, 2); tft.setTextDatum(TL_DATUM);
 }
 void drawHeader() {
-  tft.fillRect(0, 0, SCREEN_W, 72, TFT_DARKGREEN);
-  tft.setTextDatum(TC_DATUM); tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
+  tft.fillRect(0, 0, SCREEN_W, 72, COL_HEADER);
+  tft.setTextDatum(TC_DATUM); tft.setTextColor(COL_TEXT, COL_HEADER);
   tft.drawString("TP REFRESHER", SCREEN_W / 2, 13, 4); tft.setTextDatum(TL_DATUM);
   drawStatusBadge();
 }
 void drawCard(size_t index) {
   const Bathroom& room = bathrooms[index]; const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
   const uint16_t accent = colorFor(room.state);
-  tft.fillRoundRect(10, y, 300, CARD_H, 12, TFT_WHITE); tft.fillRoundRect(10, y, 12, CARD_H, 12, accent);
-  tft.setTextColor(TFT_DARKGREY, TFT_WHITE); tft.drawString(room.name, 30, y + 14, 4);
-  tft.setTextColor(accent, TFT_WHITE);
+  tft.fillRoundRect(10, y, 300, CARD_H, 12, COL_CARD); tft.fillRoundRect(10, y, 12, CARD_H, 12, accent);
+  tft.setTextColor(COL_TEXT, COL_CARD); tft.drawString(room.name, 30, y + 14, 4);
+  tft.setTextColor(accent, COL_CARD);
   tft.drawString(labelFor(room.state), 31, y + 55, 2);
   // Say so when time bumped this up, so nobody thinks a person reported it.
   if (room.reported.length() && room.reported != room.state) {
-    tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+    tft.setTextColor(COL_MUTED, COL_CARD);
     tft.drawString(String("was ") + labelFor(room.reported), 31, y + CARD_H - 22, 2);
   }
-  tft.setTextDatum(TR_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+  tft.setTextDatum(TR_DATUM); tft.setTextColor(COL_MUTED, COL_CARD);
   tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", 298, y + CARD_H - 22, 2); tft.setTextDatum(TL_DATUM);
 }
 void drawCardNote(size_t index, const char* note) {
   const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
-  tft.fillRect(140, y + CARD_H - 26, 158, 22, TFT_WHITE);
-  tft.setTextDatum(TR_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+  tft.fillRect(140, y + CARD_H - 26, 158, 22, COL_CARD);
+  tft.setTextDatum(TR_DATUM); tft.setTextColor(COL_MUTED, COL_CARD);
   tft.drawString(note, 298, y + CARD_H - 22, 2); tft.setTextDatum(TL_DATUM);
 }
 void rememberPainted() {
@@ -145,20 +160,20 @@ void rememberPainted() {
   paintedCount = bathroomCount; paintedOnline = online; screenReady = true;
 }
 void drawTabs() {
-  const uint16_t activeBg = TFT_DARKGREEN, idleBg = tft.color565(200, 205, 200);
+  const uint16_t activeBg = COL_HEADER, idleBg = COL_TAB_IDLE;
   tft.fillRect(0, TAB_Y, SCREEN_W / 2, TAB_H, screen == 0 ? activeBg : idleBg);
   tft.fillRect(SCREEN_W / 2, TAB_Y, SCREEN_W / 2, TAB_H, screen == 1 ? activeBg : idleBg);
   tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(screen == 0 ? TFT_WHITE : TFT_DARKGREY, screen == 0 ? activeBg : idleBg);
+  tft.setTextColor(screen == 0 ? COL_TEXT : COL_MUTED, screen == 0 ? activeBg : idleBg);
   tft.drawString("PAPER", SCREEN_W / 4, TAB_Y + TAB_H / 2, 2);
-  tft.setTextColor(screen == 1 ? TFT_WHITE : TFT_DARKGREY, screen == 1 ? activeBg : idleBg);
+  tft.setTextColor(screen == 1 ? COL_TEXT : COL_MUTED, screen == 1 ? activeBg : idleBg);
   tft.drawString("LAUNDRY", SCREEN_W * 3 / 4, TAB_Y + TAB_H / 2, 2);
   tft.setTextDatum(TL_DATUM);
 }
 uint16_t machineColor(const String& state) {
-  if (state == "done") return TFT_RED;
-  if (state == "running") return tft.color565(0, 122, 190);
-  return TFT_DARKGREY;
+  if (state == "done") return COL_OUT;
+  if (state == "running") return COL_RUNNING;
+  return COL_MUTED;
 }
 void formatRemaining(long seconds, char* out, size_t size) {
   if (seconds < 0) seconds = 0;
@@ -168,14 +183,14 @@ void formatRemaining(long seconds, char* out, size_t size) {
 void drawMachineTime(size_t index) {
   const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
   const Machine& machine = machines[index];
-  tft.fillRect(20, y + 44, 280, 56, TFT_WHITE);
+  tft.fillRect(20, y + 44, 280, 56, COL_CARD);
   tft.setTextDatum(MC_DATUM);
   if (machine.state == "idle") {
-    tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+    tft.setTextColor(COL_TEXT, COL_CARD);
     tft.drawString("READY", SCREEN_W / 2, y + 70, 4);
   } else {
     char buffer[8]; formatRemaining(remainingNow(index), buffer, sizeof(buffer));
-    tft.setTextColor(machineColor(machine.state), TFT_WHITE);
+    tft.setTextColor(machineColor(machine.state), COL_CARD);
     tft.drawString(machine.state == "done" ? "DONE" : buffer, SCREEN_W / 2, y + 70, machine.state == "done" ? 4 : 7);
   }
   tft.setTextDatum(TL_DATUM);
@@ -184,12 +199,12 @@ void drawMachine(size_t index) {
   const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
   const Machine& machine = machines[index];
   const uint16_t accent = machineColor(machine.state);
-  tft.fillRoundRect(10, y, 300, LCARD_H, 12, TFT_WHITE);
+  tft.fillRoundRect(10, y, 300, LCARD_H, 12, COL_CARD);
   tft.fillRoundRect(10, y, 12, LCARD_H, 12, accent);
-  tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+  tft.setTextColor(COL_TEXT, COL_CARD);
   tft.drawString(machine.name, 30, y + 12, 4);
   drawMachineTime(index);
-  tft.setTextDatum(BC_DATUM); tft.setTextColor(accent, TFT_WHITE);
+  tft.setTextDatum(BC_DATUM); tft.setTextColor(accent, COL_CARD);
   const char* hint = machine.state == "idle" ? "Tap to start"
                    : machine.state == "done" ? "Tap to clear" : "Tap to cancel";
   tft.drawString(hint, SCREEN_W / 2, y + LCARD_H - 8, 2);
@@ -197,24 +212,24 @@ void drawMachine(size_t index) {
 }
 void drawMachineNote(size_t index, const char* note) {
   const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
-  tft.fillRect(20, y + LCARD_H - 24, 280, 20, TFT_WHITE);
-  tft.setTextDatum(BC_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_WHITE);
+  tft.fillRect(20, y + LCARD_H - 24, 280, 20, COL_CARD);
+  tft.setTextDatum(BC_DATUM); tft.setTextColor(COL_MUTED, COL_CARD);
   tft.drawString(note, SCREEN_W / 2, y + LCARD_H - 8, 2); tft.setTextDatum(TL_DATUM);
 }
 void drawLaundryScreen() {
-  tft.fillScreen(TFT_LIGHTGREY); drawHeader();
+  tft.fillScreen(COL_BG); drawHeader();
   for (size_t i = 0; i < machineCount; ++i) {
     drawMachine(i);
     paintedMachine[i] = machines[i].state; paintedRemaining[i] = remainingNow(i);
   }
   if (machineCount == 0) {
-    tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_DARKGREY, TFT_LIGHTGREY);
+    tft.setTextDatum(MC_DATUM); tft.setTextColor(COL_MUTED, COL_BG);
     tft.drawString("No laundry data", SCREEN_W / 2, 240, 4); tft.setTextDatum(TL_DATUM);
   }
   drawTabs(); laundryReady = true;
 }
 void drawScreen() {
-  tft.fillScreen(TFT_LIGHTGREY); drawHeader();
+  tft.fillScreen(COL_BG); drawHeader();
   for (size_t i = 0; i < bathroomCount; ++i) drawCard(i);
   drawTabs();
   rememberPainted();
@@ -245,8 +260,8 @@ void renderUpdates() {
   }
 }
 void showMessage(const char* title, const char* detail) {
-  tft.fillScreen(TFT_LIGHTGREY); tft.setTextDatum(MC_DATUM); tft.setTextColor(TFT_DARKGREEN, TFT_LIGHTGREY);
-  tft.drawString(title, SCREEN_W / 2, 200, 4); tft.setTextColor(TFT_DARKGREY, TFT_LIGHTGREY);
+  tft.fillScreen(COL_BG); tft.setTextDatum(MC_DATUM); tft.setTextColor(COL_TEXT, COL_BG);
+  tft.drawString(title, SCREEN_W / 2, 200, 4); tft.setTextColor(COL_MUTED, COL_BG);
   tft.drawString(detail, SCREEN_W / 2, 245, 2); tft.setTextDatum(TL_DATUM);
 }
 bool connectWiFi() {
@@ -361,7 +376,7 @@ void startOta() {
     static int lastPercent = -1; const int percent = total ? static_cast<int>((done * 100ULL) / total) : 0;
     if (percent == lastPercent) return;
     lastPercent = percent;
-    tft.fillRect(60, 280, 200, 16, TFT_WHITE); tft.fillRect(60, 280, 2 * percent, 16, TFT_DARKGREEN);
+    tft.fillRect(60, 280, 200, 16, COL_CARD); tft.fillRect(60, 280, 2 * percent, 16, COL_HEADER);
   });
   ArduinoOTA.onEnd([]() { showMessage("Updated", "Restarting"); logf("OTA done\n"); });
   ArduinoOTA.onError([](ota_error_t error) { logf("OTA error %u\n", error); showMessage("Update failed", "Board still running"); });
