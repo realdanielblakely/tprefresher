@@ -40,8 +40,8 @@ Nothing needs a developer laptop to be awake any more.
 
 ## Deployment
 
-The backend runs on the always-on Mac (user `deploy`, host `server.local`, LAN
-address 192.168.1.x at time of writing) as a launchd agent.
+The backend runs on an always-on Mac as a launchd agent. The examples below use
+user `deploy` and host `server.local`; substitute your own.
 
 - Working copy: `/Users/deploy/tprefresher`
 - Node: `/Users/deploy/.local/bin/node`, v22
@@ -118,8 +118,7 @@ and ledcWrite by channel. Core 3.x replaced those with ledcAttach by pin.
 ## Tidbyt companion
 
 There is a companion view on a Tidbyt LED display. It does not live in this repo. It
-is at `a separate Tidbyt app directory` on the developer machine and runs
-on the host beside the backend, reading `http://127.0.0.1:3000` every 300 seconds.
+runs on the backend host, reading `http://127.0.0.1:3000` every 300 seconds.
 
 It renders all clear, per room severity, and an explicit NO SIGNAL when the backend
 cannot be reached, rather than leaving a stale all clear on screen. If you change the
