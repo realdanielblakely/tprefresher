@@ -92,6 +92,23 @@ check the result with `tools/preview_vlw.py NAME.vlw "sample text"`, which parse
 file the way TFT_eSPI does. Verify a font with the previewer before flashing; a bad
 .vlw shows up as garbled glyphs that cost a flash cycle to diagnose.
 
+## Screenshots
+
+The board can hand over its own framebuffer. The ST7796 supports reading display RAM
+back and MISO is wired, so `tools/screenshot.py <board-ip>` pulls exactly what is on
+glass as a PNG over Wi-Fi. This is worth using before asking anyone to look at the
+panel; it caught a row overflowing the bottom edge and an accent block that was far
+too wide, neither of which was obvious from the code.
+
+The stream is raw RGB565 high byte first, which is the display's byte order rather
+than the ESP32's. Decoding it the other way produces a recognisable layout in absurd
+colours, which is a useful tell if it ever regresses.
+
+A screenshot cannot show brightness: the backlight is not part of the framebuffer, so
+day and night captures are identical. Judging the night profile still needs eyes.
+
+Current captures live in `docs/screenshots/`.
+
 ## Colours
 
 The display is dark by design, not for looks. Perceived brightness on this panel is

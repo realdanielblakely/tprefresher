@@ -63,6 +63,9 @@ void useFont(const uint8_t* font) {
 }
 XPT2046_Touchscreen touch(TOUCH_CS_PIN, TOUCH_IRQ_PIN);
 WiFiUDP logUdp;
+// Screenshot server. The panel can read its own framebuffer back, so the board can
+// hand over exactly what is on glass instead of someone photographing it.
+WiFiServer shotServer(4445);
 // Mirror serial output to a UDP broadcast so the board stays debuggable off USB.
 void logf(const char* format, ...) {
   char line[192]; va_list args; va_start(args, format);
@@ -92,15 +95,15 @@ bool laundryReady = false;
 // Tabs sit under the header, not at the bottom edge. Resistive panels are
 // unreliable at the extremes, and the very bottom may be unreachable entirely.
 constexpr int TAB_Y = 78, TAB_H = 38;
-constexpr int CARD_Y = 128, CARD_H = 100, CARD_GAP = 10;
+constexpr int CARD_Y = 128, CARD_H = 104, CARD_GAP = 18;
 // The colour is the information, so give it real area rather than a sliver.
-constexpr int ACCENT_W = 76, CARD_X = 10, CARD_W = 300, HEADER_H = 72;
+constexpr int ACCENT_W = 46, CARD_X = 10, CARD_W = 300, HEADER_H = 72;
 // Every screen keeps content inside this column. Header, cards and hints all align
 // to it, which is most of the difference between "app" and "sketch".
 constexpr int EDGE_L = CARD_X + 12, EDGE_R = CARD_X + CARD_W - 12;
 constexpr int TEXT_X = CARD_X + ACCENT_W + 14;
 constexpr int CONTENT_MID = CARD_X + ACCENT_W + (CARD_W - ACCENT_W) / 2;
-constexpr int LCARD_Y = 128, LCARD_H = 148, LCARD_GAP = 16;
+constexpr int LCARD_Y = 128, LCARD_H = 160, LCARD_GAP = 22;
 
 
 long remainingNow(size_t index) {
@@ -129,6 +132,17 @@ void setBacklight(int target) {
   backlightLevel = target; ledcWrite(BACKLIGHT_CHANNEL, backlightLevel);
 }
 void wakeScreen() { lastActivity = millis(); setBacklight(fullLevel()); }
+uint16_t lighten(uint16_t color, uint8_t amount) {
+  uint16_t r = (color >> 11) & 0x1F, g = (color >> 5) & 0x3F, b = color & 0x1F;
+  r += ((31 - r) * amount) / 255; g += ((63 - g) * amount) / 255; b += ((31 - b) * amount) / 255;
+  return (r << 11) | (g << 5) | b;
+}
+// Motion confirms a change and nothing else. Two frames, under 250ms, accent only.
+void pulseAccent(int y, int height, uint16_t accent) {
+  tft.fillRect(CARD_X, y, ACCENT_W, height, lighten(accent, 150)); delay(110);
+  tft.fillRect(CARD_X, y, ACCENT_W, height, lighten(accent, 60)); delay(90);
+  tft.fillRect(CARD_X, y, ACCENT_W, height, accent);
+}
 uint16_t colorFor(const String& state) {
   if (state == "out") return COL_OUT;
   if (state == "urgent") return COL_URGENT;
@@ -166,9 +180,9 @@ void drawCard(size_t index) {
   tft.fillRect(CARD_X, y, CARD_W, CARD_H, COL_CARD);
   tft.fillRect(CARD_X, y, ACCENT_W, CARD_H, accent);
   useFont(PlexUI);
-  tft.setTextColor(COL_TEXT, COL_CARD); tft.drawString(room.name, TEXT_X, y + 20);
+  tft.setTextColor(COL_TEXT, COL_CARD); tft.drawString(room.name, TEXT_X, y + 24);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(accent, COL_CARD);
-  tft.drawString(labelFor(room.state), EDGE_R, y + 20);
+  tft.drawString(labelFor(room.state), EDGE_R, y + 24);
   tft.setTextDatum(TL_DATUM);
   useFont(PlexCaption);
   // The bottom line holds one thing. When time escalated a room, saying so beats
@@ -176,19 +190,19 @@ void drawCard(size_t index) {
   tft.setTextColor(COL_MUTED, COL_CARD);
   const bool escalated = room.reported.length() && room.reported != room.state;
   if (escalated) {
-    tft.drawString("raised by time", TEXT_X, y + 64);
+    tft.drawString("raised by time", TEXT_X, y + 68);
   } else {
     tft.setTextDatum(TR_DATUM);
-    tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", EDGE_R, y + 64);
+    tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", EDGE_R, y + 68);
     tft.setTextDatum(TL_DATUM);
   }
 }
 void drawCardNote(size_t index, const char* note) {
   const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
-  tft.fillRect(140, y + 62, 158, 24, COL_CARD);
+  tft.fillRect(140, y + 66, 158, 24, COL_CARD);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(COL_MUTED, COL_CARD);
   useFont(PlexCaption);
-  tft.drawString(note, EDGE_R, y + 64); tft.setTextDatum(TL_DATUM);
+  tft.drawString(note, EDGE_R, y + 68); tft.setTextDatum(TL_DATUM);
 }
 void rememberPainted() {
   for (size_t i = 0; i < bathroomCount; ++i) { paintedState[i] = bathrooms[i].state + "/" + bathrooms[i].reported; paintedName[i] = bathrooms[i].name; }
@@ -275,7 +289,11 @@ void renderLaundry() {
   if (!laundryReady) { drawLaundryScreen(); return; }
   for (size_t i = 0; i < machineCount; ++i) {
     const long left = remainingNow(i);
-    if (machines[i].state != paintedMachine[i]) { drawMachine(i); paintedMachine[i] = machines[i].state; paintedRemaining[i] = left; continue; }
+    if (machines[i].state != paintedMachine[i]) {
+      drawMachine(i); paintedMachine[i] = machines[i].state; paintedRemaining[i] = left;
+      pulseAccent(LCARD_Y + static_cast<int>(i) * (LCARD_H + LCARD_GAP), LCARD_H, machineColor(machines[i].state));
+      continue;
+    }
     if (left != paintedRemaining[i]) { drawMachineTime(i); paintedRemaining[i] = left; }
   }
 }
@@ -294,6 +312,7 @@ void renderUpdates() {
     const String signature = bathrooms[i].state + "/" + bathrooms[i].reported;
     if (signature == paintedState[i] && bathrooms[i].name == paintedName[i]) continue;
     drawCard(i); paintedState[i] = signature; paintedName[i] = bathrooms[i].name; wakeScreen();
+    pulseAccent(CARD_Y + static_cast<int>(i) * (CARD_H + CARD_GAP), CARD_H, colorFor(bathrooms[i].state));
   }
 }
 void showMessage(const char* title, const char* detail) {
@@ -419,6 +438,7 @@ void startOta() {
   ArduinoOTA.onEnd([]() { showMessage("Updated", "Restarting"); logf("OTA done\n"); });
   ArduinoOTA.onError([](ota_error_t error) { logf("OTA error %u\n", error); showMessage("Update failed", "Board still running"); });
   ArduinoOTA.begin();
+  shotServer.begin();
   logf("OTA ready at %s.local, build %s %s\n", OTA_HOSTNAME, __DATE__, __TIME__);
 }
 void setup() {
@@ -431,11 +451,26 @@ void setup() {
   WiFi.setHostname(OTA_HOSTNAME); online = connectWiFi();
   fetchStatus(); drawScreen();  // loop() starts OTA once Wi-Fi is up
 }
+// Streams the framebuffer as raw little endian RGB565, row by row, over TCP.
+void handleScreenshot() {
+  WiFiClient client = shotServer.available();
+  if (!client) return;
+  logf("screenshot: client connected\n");
+  uint16_t row[SCREEN_W];
+  for (int y = 0; y < SCREEN_H; ++y) {
+    tft.readRect(0, y, SCREEN_W, 1, row);
+    client.write(reinterpret_cast<uint8_t*>(row), SCREEN_W * 2);
+  }
+  client.flush();
+  client.stop();
+  logf("screenshot: sent %d bytes\n", SCREEN_W * SCREEN_H * 2);
+}
 void loop() {
   static bool otaStarted = false;
   if (WiFi.status() == WL_CONNECTED) {
     if (!otaStarted) { startOta(); syncClock(); otaStarted = true; }
     ArduinoOTA.handle();
+    handleScreenshot();
   } else {
     otaStarted = false;
   }

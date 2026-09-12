@@ -1,6 +1,6 @@
 # Closet Board Design Brief
 
-Status: Phase A implemented 2026-09-12. Phases B and C outstanding.
+Status: Phases A, B and C implemented 2026-09-12.
 Audience: Daniel + whoever touches `firmware/src/main.cpp` (Claude Code, Sobol).
 Goal: make the TP Refresher look like a **professional product app** on a wall, not a vibe-coded hobby dashboard.
 
@@ -299,12 +299,36 @@ Also landed in this pass, from looking at the real panel rather than the brief:
   left with the right 40% empty. The status word now sits hard right on the same
   line as the name, against the shared EDGE_R column.
 
-### Phase C — Polish (optional weekend)
+### Phase C — Polish (optional weekend) — DONE 2026-09-12
 
 1. State-change pulse on accent only.
 2. Optional 1-bit system-style glyphs.
 3. Screenshot set (day + night) for CLAUDE.md / README.
 4. Note any Tidbyt string mismatches and fix the companion to match, not the reverse, if closet is now the source of truth.
+
+Landed:
+
+- Accent pulse on state change only. Two frames, roughly 200ms, accent block alone.
+  Nothing animates when nothing changed.
+- Screenshot capture over Wi-Fi. The panel reads its own framebuffer back, so
+  `tools/screenshot.py` returns exactly what is on glass. This changed how the rest
+  of the pass was done: instead of guessing and asking Daniel to look, layout could
+  be checked directly. It immediately caught a third row overflowing the bottom edge
+  by 8px and an accent block at 76px that read as a green panel rather than a status
+  marker. Both were retuned against real captures.
+- Proportions retuned from those captures: accent narrowed 76 to 46, rows grown and
+  spaced to use the full panel instead of leaving 60px dead at the bottom.
+- Tidbyt parity checked programmatically. All four state colours match the board
+  exactly. The companion's label and rank fields were dead once it moved to colour
+  squares, and were removed.
+
+Not done: the 1-bit glyphs in item 2. The panel reads as finished without them and
+the brief itself marks them optional. Hand-drawn icons are the most likely thing in
+this whole pass to tip back toward the maker aesthetic it is trying to escape, so
+they should be a deliberate decision with a preview, not a polish afterthought.
+
+Day and night screenshot pairs are also not possible: the backlight is not part of
+the framebuffer, so the captures are identical. Night still needs human eyes.
 
 ---
 
