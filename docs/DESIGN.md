@@ -10,6 +10,9 @@ Related: [HOUSING.md](HOUSING.md) (shell later), `CLAUDE.md` (hardware truths).
 
 **Aesthetic lock:** quiet consumer software. Think polished system UI (calm dark list app), not Arduino sample sketches, not cyberpunk HUD, not novelty gadget chrome.
 
+**Anti-slop lock:** avoid the generic look models default to (even when a human is steering). Specific decisions beat averaged taste. See §1c.
+
+
 ---
 
 ## 1. Why this pass
@@ -47,6 +50,32 @@ Daniel's direction: more *something* — specifically, it should look like softw
 
 If a change makes it prettier but less trustworthy, reject it.
 
+
+---
+
+## 1c. Anti-slop (look less AI-generic)
+
+"AI slop" in UI is the statistical average: safe purple/blue accents, Inter-ish type, identical card chrome, equal padding everywhere, decorative gradients, three identical feature tiles. Models (and vibe-coded passes) regress to that average unless constraints are written down.
+
+**Resources (read these; do not cargo-cult web tricks onto a 320x480 TFT):**
+
+- [How to Avoid AI Slop in Design (Forgehouse)](https://forgehouse.ai/guides/avoid-ai-slop-design/) — constraints + reference research + craft loop beat re-rolling vibes.
+- [AI Slop Design: why generic UI happens + fix rules (Vibe Code Kit)](https://vibecodekit.dev/ai-slop-design) — concrete tells (gray card borders, Inter, purple gradients) and kill rules; palette 60/30/10; cards prefer whitespace/surface shift over gray outlines.
+- [Atlassian on DESIGN.md vs slop](https://www.atlassian.com/blog/how-we-build/atlassians-design-md-is-here-what-we-learned-testing-portable-design-context-in-practice) — without brand/context, agents emit gradient buttons + generic cards; written design context is the fix.
+- [Google Stitch DESIGN.md overview](https://stitch.withgoogle.com/docs/design-md/overview/) + [VoltAgent awesome-design-md](https://github.com/voltagent/awesome-design-md) — portable design-system markdown agents actually follow.
+- [Sailop: Complete Guide to Anti-AI Design (2026)](https://sailop.com/blog/complete-guide-anti-ai-design-2026) + [Anti-Slop Manifesto](https://sailop.com/blog/anti-slop-manifesto-73-rules-for-unique-design) — typography/spacing tells (Inter-only, uniform gaps, identical radii). Use judgment on embedded hardware; steal the *reject list*, not the web CSS recipes.
+
+**Rules that apply on this board**
+
+1. Commit to one direction (quiet product / dark list app) and stop shopping aesthetics mid-pass.
+2. Write constraints here; do not re-prompt "make it nicer."
+3. Neutrals structure; one accent family for state only. No decorative second accent hue.
+4. Prefer surface separation (bg vs card lightness) over outlining every card in gray.
+5. One type family with clear size roles — not "whatever TFT font ID is free." Avoid defaulting to the most generic UI sans look if a better open license face fits flash.
+6. Spacing on a small modular grid, but allow optical 1–2px nudges so it does not look machine-stamped.
+7. Reject: gradients, glass, purple-blue hero vibes, joke headers, mascot stickers, equal visual weight on every element.
+8. Craft loop: change → flash/photo → critique against hallway glance + "app not Arduino" test → iterate. Do not regenerate from scratch for luck.
+
 ---
 
 ## 2. Hardware locks (do not fight)
@@ -67,8 +96,8 @@ If a design needs LVGL, full color photos, or micro-interactions that fight resi
 ## 3. Character
 
 **Name on glass:** not "TP REFRESHER". Prefer a short household label:
-- Primary candidate: `STORES`
-- Acceptable alternates: `CLOSET`, `PAPER`
+- Primary candidate: `REFRESH`
+- Acceptable alternates: `CLOSET`, `PAPER` (never `STORES`)
 - Avoid: cute puns, app-store names, military titles, ship/fantasy names
 
 **Voice:** calm household status board. Reports stock. Escalates without drama. Never jokes about bathrooms. Never sounds like Alexa.
@@ -213,7 +242,7 @@ Tone check: if a label would look fine in a shipping consumer app, keep it. If i
 
 ### Phase A — Identity + polish pass (half day)
 
-1. Rename header to the chosen household label (`STORES` default).
+1. Rename header to the chosen household label (`REFRESH` default).
 2. Retune header/tab spacing for the new word length; lock equal insets/gaps.
 3. Normalize status words to the copy deck.
 4. Sweep draw calls for alignment consistency (same X, same gaps, same radius).
@@ -265,12 +294,12 @@ Do not touch housing STL work in this pass.
 
 ## 10. Open choices (Daniel decides once)
 
-1. Header word: `STORES` vs `CLOSET` vs `PAPER`
+1. Header word: locked to `REFRESH` (alts only if Daniel reopens: `CLOSET` / `PAPER`)
 2. OK label: `OK` vs `STOCKED`
 3. Confirm verb: `clear` vs `confirm`
 4. Phase B font: pick one open license pair (suggest a condensed + a UI sans; name them in the PR)
 
-Default if no answer: `STORES`, `OK`, `Tap to confirm`, and a single clean UI sans for Phase B.
+Default if no answer: `REFRESH`, `OK`, `Tap to confirm`, and a single clean UI sans for Phase B (not Inter-clone generic).
 
 ---
 
