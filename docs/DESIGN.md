@@ -2,9 +2,11 @@
 
 Status: proposed. Not implemented.
 Audience: Daniel + whoever touches `firmware/src/main.cpp` (Claude Code, Sobol).
-Goal: make the TP Refresher look like a *character* (house quartermaster), not a vibe-coded utility app.
+Goal: make the TP Refresher look intentional and house-native, not a vibe-coded utility app.
 
 Related: [HOUSING.md](HOUSING.md) (shell later), `CLAUDE.md` (hardware truths).
+
+**Tone lock:** no military ranks, no ship/navy language, no Daemon cosplay on this panel. This is a home closet board.
 
 ---
 
@@ -27,7 +29,7 @@ Housing is blocked on physical measure. UI is not. Softwaresoul is the point of 
 | TFT_eSPI today (not LVGL) | Prefer custom smooth fonts + bitmaps over a framework rewrite. |
 | Closet, wall power | Always-on glance. No audio. No party LEDs. |
 | Night idle backlight already dim | Dark pixels do the work. Do not reintroduce large white fields. |
-| Tidbyt companion nearby | Same state colours. Same mood grammar. Two devices, one cast. |
+| Tidbyt companion nearby | Same state colours. Same mood grammar. Two devices, one household look. |
 
 If a design needs LVGL, full color photos, or micro-interactions that fight resistive touch, it is the wrong design for v1.
 
@@ -35,12 +37,12 @@ If a design needs LVGL, full color photos, or micro-interactions that fight resi
 
 ## 3. Character
 
-**Name on glass:** not "TP REFRESHER". Prefer something short that sounds like a role:
-- Primary candidate: `QUARTERMASTER`
-- Acceptable alternates: `STORES`, `CLOSET`
-- Avoid: cute puns, app-store names, ship cosplay titles
+**Name on glass:** not "TP REFRESHER". Prefer a short household label:
+- Primary candidate: `STORES`
+- Acceptable alternates: `CLOSET`, `PAPER`
+- Avoid: cute puns, app-store names, military titles, ship/fantasy names
 
-**Voice:** calm logistics officer. Reports stock. Escalates without drama. Never jokes about bathrooms. Never sounds like Alexa.
+**Voice:** calm household status board. Reports stock. Escalates without drama. Never jokes about bathrooms. Never sounds like Alexa.
 
 **Glance contract (across the room):**
 1. Colour block tells severity before you can read type.
@@ -48,7 +50,7 @@ If a design needs LVGL, full color photos, or micro-interactions that fight resi
 3. One status word (`OK` / `LOW` / `OUT` / `RUNNING` / `DONE`).
 4. Hints and "was …" notes are secondary. They lose if space is tight.
 
-**Cast rule:** closet = quartermaster. Tidbyt = morning brief / attitude. Do not merge personalities.
+**Household rule:** closet board = paper + laundry status. Tidbyt = morning glance / other attitude. Do not mash them into one personality.
 
 ---
 
@@ -69,7 +71,7 @@ Do not invent a second palette for laundry. Same grammar, different nouns.
 
 ### Type
 
-Ship one custom smooth-font pair (TFT_eSPI smooth fonts or `.vlw`):
+Add one custom smooth-font pair (TFT_eSPI smooth fonts or `.vlw`):
 
 | Role | Use | Notes |
 | --- | --- | --- |
@@ -83,8 +85,8 @@ Avoid decorative scripts. Avoid using four built-in font IDs as a personality.
 
 Keep the proven skeleton:
 
-- Header band (~72px) with role title + LIVE/OFFLINE
-- Tabs under header (`PAPER` / `LAUNDRY`) — rename labels only if clearer (`STORES` / `CYCLES` ok; do not get cute)
+- Header band (~72px) with household label + LIVE/OFFLINE
+- Tabs under header (`PAPER` / `LAUNDRY`) — rename only if clearer (`STOCK` / `CYCLES` ok; do not get cute)
 - Cards with fat left accent (`ACCENT_W` ~76). Colour is the signal.
 
 Tighten:
@@ -149,7 +151,7 @@ Tone check: if a label would look fine on a municipal parking meter, it is proba
 
 - Rewriting the backend or Alexa bridge for aesthetics
 - LVGL migration as the design vehicle
-- Ship / Daemon lore on this panel (house x ship bleed lives elsewhere)
+- Military, ship, or story-fiction framing on this panel
 - Photo backgrounds, glassmorphism, gradients that waste flash and contrast
 - Making the board brighter again
 - Touch targets smaller than today
@@ -161,7 +163,7 @@ Tone check: if a label would look fine on a municipal parking meter, it is proba
 
 ### Phase A — Identity (half day)
 
-1. Rename header to quartermaster role string.
+1. Rename header to the chosen household label (`STORES` default).
 2. Retune header/tab spacing for the new word length.
 3. Normalize status words to the copy deck.
 4. Flash OTA. Live with it for a day.
@@ -190,7 +192,7 @@ Accept if: laundry countdown and room names feel intentional, not default TFT.
 1. **Hallway glance:** from ~2m, severity colour readable before text.
 2. **Night:** idle backlight + dark UI still readable without washing the closet.
 3. **Touch:** all paper cards + both laundry cards + both tabs still reliable (resistive edges).
-4. **Cast:** standing next to Tidbyt, colours agree for ok/low/urgent/out.
+4. **Household match:** standing next to Tidbyt, colours agree for ok/low/urgent/out.
 5. **Silence:** no new sounds, no RGB party modes.
 6. **OTA:** one full cycle flash without USB.
 
@@ -202,7 +204,7 @@ Fail any of these and revert the offending piece; do not stack more chrome on to
 
 - `firmware/src/main.cpp` — palette constants, drawHeader/drawCard/drawMachine/drawTabs, copy strings
 - `firmware/data/` or `firmware/include/fonts/` — smooth fonts if Phase B
-- `CLAUDE.md` — note the character + link here when Phase A lands
+- `CLAUDE.md` — note the identity + link here when Phase A lands
 - Tidbyt companion applet (separate) — only if copy/colour drift appears
 
 Do not touch housing STL work in this pass.
@@ -211,15 +213,15 @@ Do not touch housing STL work in this pass.
 
 ## 10. Open choices (Daniel decides once)
 
-1. Header word: `QUARTERMASTER` vs `STORES` vs `CLOSET`
+1. Header word: `STORES` vs `CLOSET` vs `PAPER`
 2. OK label: `OK` vs `STOCKED`
 3. Confirm verb: `clear` vs `confirm`
 4. Phase B font: pick one open license pair (suggest a condensed + a UI sans; name them in the PR)
 
-Default if no answer: `QUARTERMASTER`, `OK`, `Tap to confirm`, and a single clean UI sans for Phase B.
+Default if no answer: `STORES`, `OK`, `Tap to confirm`, and a single clean UI sans for Phase B.
 
 ---
 
 ## 11. Success looks like
 
-Someone who does not know the project glances at the closet and thinks "that thing is on duty," not "someone put a phone UI on a wall." The board still restocks paper. It just finally looks like it belongs to the house.
+Someone who does not know the project glances at the closet and thinks the board belongs there, not that someone taped a phone UI to the wall. It still restocks paper. It just looks like part of the house.
