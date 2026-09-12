@@ -72,10 +72,25 @@ secrets and the firmware ones should not spread to another machine.
 software, not a maker dashboard. Phase A landed 2026-09-12. Read it before changing
 anything on glass, including copy.
 
-The identity on glass is `REFRESH`. Status words are single words. Layout aligns to
+The identity on glass is `DAEMON`, set by owner override on 2026-09-12. The brief
+banned that word originally; it was reopened deliberately. Do not change it back. Status words are single words. Layout aligns to
 the EDGE_L and EDGE_R content column in main.cpp; do not reintroduce hardcoded X
 positions, which is how the old layout drifted out of alignment without anyone
 noticing.
+
+## Type
+
+Three IBM Plex smooth fonts, OFL licensed, in `firmware/include/fonts`: Display for
+the laundry countdown, UI for names, status words and tabs, Caption for hints. There
+are no built-in TFT font IDs left in the draw calls.
+
+Only one smooth font can be loaded at a time, so `useFont()` tracks the current one
+and switches only when it changes. Group draws by role rather than interleaving.
+
+Regenerate with `tools/make_vlw.py FONT.ttf SIZE NAME --outdir include/fonts`, and
+check the result with `tools/preview_vlw.py NAME.vlw "sample text"`, which parses the
+file the way TFT_eSPI does. Verify a font with the previewer before flashing; a bad
+.vlw shows up as garbled glyphs that cost a flash cycle to diagnose.
 
 ## Colours
 

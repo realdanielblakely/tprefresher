@@ -6,7 +6,13 @@ Goal: make the TP Refresher look like a **professional product app** on a wall, 
 
 Related: [HOUSING.md](HOUSING.md) (shell later), `CLAUDE.md` (hardware truths).
 
-**Tone lock:** no military ranks, no ship/navy language, no Daemon cosplay on this panel. This is a home closet board.
+**Tone lock:** no military ranks, no ship/navy language. This is a home closet board.
+
+**Owner override 2026-09-12:** the header reads `DAEMON`. That contradicts the
+original tone lock, which banned it by name. Daniel reopened the choice after seeing
+the finished panel and picked it deliberately. Do not "fix" it back to `REFRESH`.
+The rest of the tone lock stands: no ranks, no ship language, no fiction in the
+body copy. One word on the header is the whole exception.
 
 **Aesthetic lock:** quiet consumer software. Think polished system UI (calm dark list app), not Arduino sample sketches, not cyberpunk HUD, not novelty gadget chrome.
 
@@ -95,7 +101,8 @@ If a design needs LVGL, full color photos, or micro-interactions that fight resi
 
 ## 3. Character
 
-**Name on glass:** not "TP REFRESHER". Prefer a short household label:
+**Name on glass:** `DAEMON` as of 2026-09-12, by owner override. Original guidance,
+kept for context:
 - Primary candidate: `REFRESH`
 - Acceptable alternates: `CLOSET`, `PAPER` (never `STORES`)
 - Avoid: cute puns, app-store names, military titles, ship/fantasy names
@@ -260,13 +267,37 @@ Two deviations from the deck, both deliberate: a running laundry timer still hin
 action is worse than one off-deck; and the open choices in §10 were taken at their
 stated defaults rather than reopened.
 
-### Phase B — Type (one evening)
+### Phase B — Type (one evening) — DONE 2026-09-12
 
 1. Add one smooth-font pair; map Display / UI / Caption roles.
 2. Kill ad-hoc font ID salad in draw calls.
 3. Re-check every `setTextColor` pair (light on dark). Night idle at 8/255.
 
 Accept if: laundry countdown and room names feel like product typography, not default TFT.
+
+Landed: IBM Plex (OFL, so it is safe in a public repo and is not the Inter-ish
+default this brief warns about) in three roles. Display is Plex Sans Condensed
+SemiBold 46 for the countdown, replacing the seven segment face, which was the
+loudest Arduino tell left on the panel. UI is Plex Sans SemiBold 24 for names,
+status words and tab labels. Caption is Plex Sans Regular 15 for hints. Every font
+ID argument is gone from the draw calls. Fonts cost 44KB, taking flash to 82.4%.
+
+`tools/make_vlw.py` builds the .vlw files and their C headers from a TTF, and
+`tools/preview_vlw.py` parses the result the way TFT_eSPI does and renders it to a
+PNG. The format was proven with the previewer before anything was flashed, and the
+fonts are reproducible rather than mystery binaries.
+
+Also landed in this pass, from looking at the real panel rather than the brief:
+
+- Every corner squared. The header band was always square while cards were rounded
+  at 12, so the screen carried two design languages. Squaring also removed the patch
+  rectangle that squared off the accent block's rounded inner corners.
+- Tabs stopped borrowing `COL_HEADER`. An active tab in the same green as the header
+  merged with it into a single blob. Active tab now takes the card surface, so it
+  reads as continuous with the content; inactive drops to the background.
+- Room rows got a right hand anchor. Colour block, name and status were all stacked
+  left with the right 40% empty. The status word now sits hard right on the same
+  line as the name, against the shared EDGE_R column.
 
 ### Phase C — Polish (optional weekend)
 
@@ -304,7 +335,8 @@ Do not touch housing STL work in this pass.
 
 ## 10. Open choices (Daniel decides once)
 
-1. Header word: locked to `REFRESH` (alts only if Daniel reopens: `CLOSET` / `PAPER`)
+1. Header word: `DAEMON`. Reopened and decided by Daniel 2026-09-12, overriding the
+   earlier `REFRESH` lock.
 2. OK label: `OK` vs `STOCKED`
 3. Confirm verb: `clear` vs `confirm`
 4. Phase B font: pick one open license pair (suggest a condensed + a UI sans; name them in the PR)

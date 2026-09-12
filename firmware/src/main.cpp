@@ -7,6 +7,9 @@
 #include <XPT2046_Touchscreen.h>
 #include <ArduinoOTA.h>
 #include <WiFiUdp.h>
+#include "fonts/PlexUI.h"
+#include "fonts/PlexCaption.h"
+#include "fonts/PlexDisplay.h"
 #include "secrets.h"
 #ifndef API_TOKEN
 #define API_TOKEN ""
@@ -48,6 +51,16 @@ constexpr uint16_t COL_OUT = RGB565(239, 68, 68);
 constexpr uint16_t COL_RUNNING = RGB565(56, 160, 220);
 
 TFT_eSPI tft;
+// Smooth fonts in three roles: Display for the countdown, UI for names and status
+// words, Caption for hints. Only one can be loaded at a time, so useFont tracks
+// the current one and switches only when it actually changes.
+const uint8_t* currentFont = nullptr;
+void useFont(const uint8_t* font) {
+  if (font == currentFont) return;
+  if (currentFont) tft.unloadFont();
+  tft.loadFont(font);
+  currentFont = font;
+}
 XPT2046_Touchscreen touch(TOUCH_CS_PIN, TOUCH_IRQ_PIN);
 WiFiUDP logUdp;
 // Mirror serial output to a UDP broadcast so the board stays debuggable off USB.
@@ -134,57 +147,63 @@ const char* labelFor(const String& state) {
 // starts at 236, so the two cannot collide the way the old long title did.
 constexpr int BADGE_X = 236, BADGE_W = EDGE_R - BADGE_X + 12;
 void drawStatusBadge() {
-  tft.fillRect(BADGE_X, 26, BADGE_W, 20, COL_HEADER);
+  tft.fillRect(BADGE_X, 24, BADGE_W, 24, COL_HEADER);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(online ? COL_OK : COL_URGENT, COL_HEADER);
-  tft.drawString(online ? "LIVE" : "OFFLINE", EDGE_R, 28, 2); tft.setTextDatum(TL_DATUM);
+  useFont(PlexCaption);
+  tft.drawString(online ? "LIVE" : "OFFLINE", EDGE_R, 26); tft.setTextDatum(TL_DATUM);
 }
 void drawHeader() {
   tft.fillRect(0, 0, SCREEN_W, HEADER_H, COL_HEADER);
   tft.setTextDatum(TL_DATUM); tft.setTextColor(COL_TEXT, COL_HEADER);
   // Title starts on the same left inset as every card, not floating centre.
-  tft.drawString("REFRESH", EDGE_L, 22, 4);
+  useFont(PlexUI);
+  tft.drawString("DAEMON", EDGE_L, 20);
   drawStatusBadge();
 }
 void drawCard(size_t index) {
   const Bathroom& room = bathrooms[index]; const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
   const uint16_t accent = colorFor(room.state);
-  tft.fillRoundRect(CARD_X, y, CARD_W, CARD_H, 12, COL_CARD);
-  tft.fillRoundRect(CARD_X, y, ACCENT_W, CARD_H, 12, accent);
-  tft.fillRect(CARD_X + ACCENT_W - 12, y, 12, CARD_H, accent);
-  tft.setTextColor(COL_TEXT, COL_CARD); tft.drawString(room.name, TEXT_X, y + 10, 4);
-  tft.setTextColor(accent, COL_CARD);
-  tft.drawString(labelFor(room.state), TEXT_X, y + 40, 4);
+  tft.fillRect(CARD_X, y, CARD_W, CARD_H, COL_CARD);
+  tft.fillRect(CARD_X, y, ACCENT_W, CARD_H, accent);
+  useFont(PlexUI);
+  tft.setTextColor(COL_TEXT, COL_CARD); tft.drawString(room.name, TEXT_X, y + 20);
+  tft.setTextDatum(TR_DATUM); tft.setTextColor(accent, COL_CARD);
+  tft.drawString(labelFor(room.state), EDGE_R, y + 20);
+  tft.setTextDatum(TL_DATUM);
+  useFont(PlexCaption);
   // The bottom line holds one thing. When time escalated a room, saying so beats
   // repeating a hint you can infer, and the two do not fit side by side.
   tft.setTextColor(COL_MUTED, COL_CARD);
   const bool escalated = room.reported.length() && room.reported != room.state;
   if (escalated) {
-    tft.drawString("raised by time", TEXT_X, y + CARD_H - 22, 2);
+    tft.drawString("raised by time", TEXT_X, y + 64);
   } else {
     tft.setTextDatum(TR_DATUM);
-    tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", EDGE_R, y + CARD_H - 22, 2);
+    tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", EDGE_R, y + 64);
     tft.setTextDatum(TL_DATUM);
   }
 }
 void drawCardNote(size_t index, const char* note) {
   const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
-  tft.fillRect(140, y + CARD_H - 26, 158, 22, COL_CARD);
+  tft.fillRect(140, y + 62, 158, 24, COL_CARD);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(COL_MUTED, COL_CARD);
-  tft.drawString(note, EDGE_R, y + CARD_H - 22, 2); tft.setTextDatum(TL_DATUM);
+  useFont(PlexCaption);
+  tft.drawString(note, EDGE_R, y + 64); tft.setTextDatum(TL_DATUM);
 }
 void rememberPainted() {
   for (size_t i = 0; i < bathroomCount; ++i) { paintedState[i] = bathrooms[i].state + "/" + bathrooms[i].reported; paintedName[i] = bathrooms[i].name; }
   paintedCount = bathroomCount; paintedOnline = online; screenReady = true;
 }
 void drawTabs() {
-  const uint16_t activeBg = COL_HEADER, idleBg = COL_TAB_IDLE;
+  const uint16_t activeBg = COL_CARD, idleBg = COL_BG;
   tft.fillRect(0, TAB_Y, SCREEN_W / 2, TAB_H, screen == 0 ? activeBg : idleBg);
   tft.fillRect(SCREEN_W / 2, TAB_Y, SCREEN_W / 2, TAB_H, screen == 1 ? activeBg : idleBg);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(screen == 0 ? COL_TEXT : COL_MUTED, screen == 0 ? activeBg : idleBg);
-  tft.drawString("PAPER", SCREEN_W / 4, TAB_Y + TAB_H / 2, 2);
+  useFont(PlexUI);
+  tft.drawString("PAPER", SCREEN_W / 4, TAB_Y + TAB_H / 2);
   tft.setTextColor(screen == 1 ? COL_TEXT : COL_MUTED, screen == 1 ? activeBg : idleBg);
-  tft.drawString("LAUNDRY", SCREEN_W * 3 / 4, TAB_Y + TAB_H / 2, 2);
+  tft.drawString("LAUNDRY", SCREEN_W * 3 / 4, TAB_Y + TAB_H / 2);
   tft.setTextDatum(TL_DATUM);
 }
 uint16_t machineColor(const String& state) {
@@ -200,15 +219,16 @@ void formatRemaining(long seconds, char* out, size_t size) {
 void drawMachineTime(size_t index) {
   const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
   const Machine& machine = machines[index];
-  tft.fillRect(CARD_X + ACCENT_W, y + 44, CARD_X + CARD_W - ACCENT_W - 12, 56, COL_CARD);
+  tft.fillRect(CARD_X + ACCENT_W, y + 34, CARD_X + CARD_W - ACCENT_W - 12, 74, COL_CARD);
   tft.setTextDatum(MC_DATUM);
   if (machine.state == "idle") {
     tft.setTextColor(COL_TEXT, COL_CARD);
-    tft.drawString("READY", CONTENT_MID, y + 70, 4);
+    useFont(PlexUI); tft.drawString("READY", CONTENT_MID, y + 70);
   } else {
     char buffer[8]; formatRemaining(remainingNow(index), buffer, sizeof(buffer));
     tft.setTextColor(machineColor(machine.state), COL_CARD);
-    tft.drawString(machine.state == "done" ? "DONE" : buffer, CONTENT_MID, y + 70, machine.state == "done" ? 4 : 7);
+    if (machine.state == "done") { useFont(PlexUI); tft.drawString("DONE", CONTENT_MID, y + 70); }
+    else { useFont(PlexDisplay); tft.drawString(buffer, CONTENT_MID, y + 70); }
   }
   tft.setTextDatum(TL_DATUM);
 }
@@ -216,23 +236,22 @@ void drawMachine(size_t index) {
   const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
   const Machine& machine = machines[index];
   const uint16_t accent = machineColor(machine.state);
-  tft.fillRoundRect(CARD_X, y, CARD_W, LCARD_H, 12, COL_CARD);
-  tft.fillRoundRect(CARD_X, y, ACCENT_W, LCARD_H, 12, accent);
-  tft.fillRect(CARD_X + ACCENT_W - 12, y, 12, LCARD_H, accent);
+  tft.fillRect(CARD_X, y, CARD_W, LCARD_H, COL_CARD);
+  tft.fillRect(CARD_X, y, ACCENT_W, LCARD_H, accent);
   tft.setTextColor(COL_TEXT, COL_CARD);
-  tft.drawString(machine.name, TEXT_X, y + 10, 4);
+  useFont(PlexUI); tft.drawString(machine.name, TEXT_X, y + 8);
   drawMachineTime(index);
   tft.setTextDatum(BC_DATUM); tft.setTextColor(accent, COL_CARD);
   const char* hint = machine.state == "idle" ? "Tap to start"
                    : machine.state == "done" ? "Tap to clear" : "Tap to cancel";
-  tft.drawString(hint, CONTENT_MID, y + LCARD_H - 8, 2);
+  useFont(PlexCaption); tft.drawString(hint, CONTENT_MID, y + LCARD_H - 8);
   tft.setTextDatum(TL_DATUM);
 }
 void drawMachineNote(size_t index, const char* note) {
   const int y = LCARD_Y + static_cast<int>(index) * (LCARD_H + LCARD_GAP);
   tft.fillRect(CARD_X + ACCENT_W, y + LCARD_H - 24, CARD_W - ACCENT_W - 12, 20, COL_CARD);
   tft.setTextDatum(BC_DATUM); tft.setTextColor(COL_MUTED, COL_CARD);
-  tft.drawString(note, CONTENT_MID, y + LCARD_H - 8, 2); tft.setTextDatum(TL_DATUM);
+  useFont(PlexCaption); tft.drawString(note, CONTENT_MID, y + LCARD_H - 8); tft.setTextDatum(TL_DATUM);
 }
 void drawLaundryScreen() {
   tft.fillScreen(COL_BG); drawHeader();
@@ -242,7 +261,7 @@ void drawLaundryScreen() {
   }
   if (machineCount == 0) {
     tft.setTextDatum(MC_DATUM); tft.setTextColor(COL_MUTED, COL_BG);
-    tft.drawString("No laundry data", SCREEN_W / 2, 240, 4); tft.setTextDatum(TL_DATUM);
+    useFont(PlexUI); tft.drawString("No laundry data", SCREEN_W / 2, 240); tft.setTextDatum(TL_DATUM);
   }
   drawTabs(); laundryReady = true;
 }
@@ -279,8 +298,9 @@ void renderUpdates() {
 }
 void showMessage(const char* title, const char* detail) {
   tft.fillScreen(COL_BG); tft.setTextDatum(MC_DATUM); tft.setTextColor(COL_TEXT, COL_BG);
-  tft.drawString(title, SCREEN_W / 2, 200, 4); tft.setTextColor(COL_MUTED, COL_BG);
-  tft.drawString(detail, SCREEN_W / 2, 245, 2); tft.setTextDatum(TL_DATUM);
+  useFont(PlexUI); tft.drawString(title, SCREEN_W / 2, 200);
+  useFont(PlexCaption); tft.setTextColor(COL_MUTED, COL_BG);
+  tft.drawString(detail, SCREEN_W / 2, 245); tft.setTextDatum(TL_DATUM);
 }
 bool connectWiFi() {
   // Power save drops inbound packets while the radio naps, which makes the board
