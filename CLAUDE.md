@@ -66,6 +66,17 @@ CLI is not set up on the host. `git pull` there will need credentials before it 
 `firmware/include/secrets.h` was deliberately excluded, since the backend needs no
 secrets and the firmware ones should not spread to another machine.
 
+## Design brief
+
+[docs/DESIGN.md](docs/DESIGN.md) is the UI direction for this panel: quiet product
+software, not a maker dashboard. Phase A landed 2026-09-12. Read it before changing
+anything on glass, including copy.
+
+The identity on glass is `REFRESH`. Status words are single words. Layout aligns to
+the EDGE_L and EDGE_R content column in main.cpp; do not reintroduce hardcoded X
+positions, which is how the old layout drifted out of alignment without anyone
+noticing.
+
 ## Colours
 
 The display is dark by design, not for looks. Perceived brightness on this panel is

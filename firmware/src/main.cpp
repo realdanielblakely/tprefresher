@@ -81,7 +81,10 @@ bool laundryReady = false;
 constexpr int TAB_Y = 78, TAB_H = 38;
 constexpr int CARD_Y = 128, CARD_H = 100, CARD_GAP = 10;
 // The colour is the information, so give it real area rather than a sliver.
-constexpr int ACCENT_W = 76, CARD_X = 10, CARD_W = 300;
+constexpr int ACCENT_W = 76, CARD_X = 10, CARD_W = 300, HEADER_H = 72;
+// Every screen keeps content inside this column. Header, cards and hints all align
+// to it, which is most of the difference between "app" and "sketch".
+constexpr int EDGE_L = CARD_X + 12, EDGE_R = CARD_X + CARD_W - 12;
 constexpr int TEXT_X = CARD_X + ACCENT_W + 14;
 constexpr int CONTENT_MID = CARD_X + ACCENT_W + (CARD_W - ACCENT_W) / 2;
 constexpr int LCARD_Y = 128, LCARD_H = 148, LCARD_GAP = 16;
@@ -120,22 +123,26 @@ uint16_t colorFor(const String& state) {
   return COL_OK;
 }
 const char* labelFor(const String& state) {
-  if (state == "out") return "OUT OF PAPER";
-  if (state == "urgent") return "DANGEROUSLY LOW";
-  if (state == "low") return "LOW ON PAPER";
+  if (state == "out") return "OUT";
+  if (state == "urgent") return "URGENT";
+  if (state == "low") return "LOW";
   return "OK";
 }
 // Sits below the title, not beside it. The title is wide enough at font 4 that a
 // badge on the same line clips its last letters when the badge clears its box.
+// The badge shares the title line. "REFRESH" ends near x=209 and the badge box
+// starts at 236, so the two cannot collide the way the old long title did.
+constexpr int BADGE_X = 236, BADGE_W = EDGE_R - BADGE_X + 12;
 void drawStatusBadge() {
-  tft.fillRect(SCREEN_W - 100, 44, 92, 22, COL_HEADER);
+  tft.fillRect(BADGE_X, 26, BADGE_W, 20, COL_HEADER);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(online ? COL_OK : COL_URGENT, COL_HEADER);
-  tft.drawString(online ? "LIVE" : "OFFLINE", SCREEN_W - 12, 46, 2); tft.setTextDatum(TL_DATUM);
+  tft.drawString(online ? "LIVE" : "OFFLINE", EDGE_R, 28, 2); tft.setTextDatum(TL_DATUM);
 }
 void drawHeader() {
-  tft.fillRect(0, 0, SCREEN_W, 72, COL_HEADER);
-  tft.setTextDatum(TC_DATUM); tft.setTextColor(COL_TEXT, COL_HEADER);
-  tft.drawString("TP REFRESHER", SCREEN_W / 2, 13, 4); tft.setTextDatum(TL_DATUM);
+  tft.fillRect(0, 0, SCREEN_W, HEADER_H, COL_HEADER);
+  tft.setTextDatum(TL_DATUM); tft.setTextColor(COL_TEXT, COL_HEADER);
+  // Title starts on the same left inset as every card, not floating centre.
+  tft.drawString("REFRESH", EDGE_L, 22, 4);
   drawStatusBadge();
 }
 void drawCard(size_t index) {
@@ -144,18 +151,18 @@ void drawCard(size_t index) {
   tft.fillRoundRect(CARD_X, y, CARD_W, CARD_H, 12, COL_CARD);
   tft.fillRoundRect(CARD_X, y, ACCENT_W, CARD_H, 12, accent);
   tft.fillRect(CARD_X + ACCENT_W - 12, y, 12, CARD_H, accent);
-  tft.setTextColor(COL_TEXT, COL_CARD); tft.drawString(room.name, TEXT_X, y + 14, 4);
+  tft.setTextColor(COL_TEXT, COL_CARD); tft.drawString(room.name, TEXT_X, y + 10, 4);
   tft.setTextColor(accent, COL_CARD);
-  tft.drawString(labelFor(room.state), TEXT_X + 1, y + 55, 2);
+  tft.drawString(labelFor(room.state), TEXT_X, y + 40, 4);
   // The bottom line holds one thing. When time escalated a room, saying so beats
   // repeating a hint you can infer, and the two do not fit side by side.
   tft.setTextColor(COL_MUTED, COL_CARD);
   const bool escalated = room.reported.length() && room.reported != room.state;
   if (escalated) {
-    tft.drawString(String("was ") + labelFor(room.reported), TEXT_X + 1, y + CARD_H - 22, 2);
+    tft.drawString("raised by time", TEXT_X, y + CARD_H - 22, 2);
   } else {
     tft.setTextDatum(TR_DATUM);
-    tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", CARD_X + CARD_W - 12, y + CARD_H - 22, 2);
+    tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", EDGE_R, y + CARD_H - 22, 2);
     tft.setTextDatum(TL_DATUM);
   }
 }
@@ -163,7 +170,7 @@ void drawCardNote(size_t index, const char* note) {
   const int y = CARD_Y + static_cast<int>(index) * (CARD_H + CARD_GAP);
   tft.fillRect(140, y + CARD_H - 26, 158, 22, COL_CARD);
   tft.setTextDatum(TR_DATUM); tft.setTextColor(COL_MUTED, COL_CARD);
-  tft.drawString(note, 298, y + CARD_H - 22, 2); tft.setTextDatum(TL_DATUM);
+  tft.drawString(note, EDGE_R, y + CARD_H - 22, 2); tft.setTextDatum(TL_DATUM);
 }
 void rememberPainted() {
   for (size_t i = 0; i < bathroomCount; ++i) { paintedState[i] = bathrooms[i].state + "/" + bathrooms[i].reported; paintedName[i] = bathrooms[i].name; }
@@ -213,7 +220,7 @@ void drawMachine(size_t index) {
   tft.fillRoundRect(CARD_X, y, ACCENT_W, LCARD_H, 12, accent);
   tft.fillRect(CARD_X + ACCENT_W - 12, y, 12, LCARD_H, accent);
   tft.setTextColor(COL_TEXT, COL_CARD);
-  tft.drawString(machine.name, TEXT_X, y + 12, 4);
+  tft.drawString(machine.name, TEXT_X, y + 10, 4);
   drawMachineTime(index);
   tft.setTextDatum(BC_DATUM); tft.setTextColor(accent, COL_CARD);
   const char* hint = machine.state == "idle" ? "Tap to start"

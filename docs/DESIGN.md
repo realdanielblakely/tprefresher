@@ -1,6 +1,6 @@
 # Closet Board Design Brief
 
-Status: proposed. Not implemented.
+Status: Phase A implemented 2026-09-12. Phases B and C outstanding.
 Audience: Daniel + whoever touches `firmware/src/main.cpp` (Claude Code, Sobol).
 Goal: make the TP Refresher look like a **professional product app** on a wall, not a vibe-coded hobby dashboard.
 
@@ -240,7 +240,7 @@ Tone check: if a label would look fine in a shipping consumer app, keep it. If i
 
 ## 7. Implementation plan (phased)
 
-### Phase A — Identity + polish pass (half day)
+### Phase A — Identity + polish pass (half day) — DONE 2026-09-12
 
 1. Rename header to the chosen household label (`REFRESH` default).
 2. Retune header/tab spacing for the new word length; lock equal insets/gaps.
@@ -249,6 +249,16 @@ Tone check: if a label would look fine in a shipping consumer app, keep it. If i
 5. Flash OTA. Live with it for a day.
 
 Accept if: from the hall it looks like a finished app surface, not a prototype, and you know what the board *is*.
+
+Landed: header reads `REFRESH` on the same line as the LIVE badge, status words cut
+to `OK` / `LOW` / `URGENT` / `OUT` and raised to the room-name size in accent colour,
+escalation note now `raised by time`, and every X position derives from a shared
+`EDGE_L` / `EDGE_R` content column instead of separately hardcoded pixels.
+
+Two deviations from the deck, both deliberate: a running laundry timer still hints
+`Tap to cancel`, because that is what the tap does and a hint that misdescribes the
+action is worse than one off-deck; and the open choices in §10 were taken at their
+stated defaults rather than reopened.
 
 ### Phase B — Type (one evening)
 
