@@ -149,6 +149,14 @@ uint16_t colorFor(const String& state) {
   if (state == "low") return COL_LOW;
   return COL_OK;
 }
+constexpr unsigned long LONG_PRESS_MS = 600;
+// Hold raises urgency one step and stops at the top. A hold never clears a room:
+// escalating and cancelling should not share a gesture.
+const char* nextLevel(const String& state) {
+  if (state == "ok") return "low";
+  if (state == "low") return "urgent";
+  return "out";
+}
 const char* labelFor(const String& state) {
   if (state == "out") return "OUT";
   if (state == "urgent") return "URGENT";
@@ -193,7 +201,7 @@ void drawCard(size_t index) {
     tft.drawString("raised by time", TEXT_X, y + 68);
   } else {
     tft.setTextDatum(TR_DATUM);
-    tft.drawString(room.state == "ok" ? "Tap to flag" : "Tap to confirm", EDGE_R, y + 68);
+    tft.drawString(room.state == "ok" ? "Tap flag, hold raise" : "Tap clear, hold raise", EDGE_R, y + 68);
     tft.setTextDatum(TL_DATUM);
   }
 }
@@ -336,6 +344,7 @@ bool requestApi(const String& path, const char* method) {
   HTTPClient http; if (!http.begin(String(API_BASE_URL) + path)) { online = false; return false; }
   http.setTimeout(4500); if (strlen(API_TOKEN) > 0) http.addHeader("X-API-Token", API_TOKEN);
   const int code = strcmp(method, "POST") == 0 ? http.POST("") : http.GET(); http.end();
+  logf("%s %s -> %d\n", method, path.c_str(), code);
   online = code >= 200 && code < 300; return online;
 }
 bool fetchStatus() {
@@ -405,12 +414,27 @@ void handleTouch() {
   for (size_t i = 0; i < bathroomCount; ++i) {
     const int top = CARD_Y + static_cast<int>(i) * (CARD_H + CARD_GAP);
     if (x >= 10 && x <= 310 && y >= top && y <= top + CARD_H) {
-      const char* action = bathrooms[i].state == "ok" ? "flag" : "confirm";
-      drawCardNote(i, "Saving...");
-      if (!requestApi(String("/api/bathrooms/") + bathrooms[i].id + "/" + action, "POST")) { drawCardNote(i, "Offline, try again"); delay(1200); }
+      // Wait out the press first, so the gesture is known before anything is sent.
+      const unsigned long pressStart = millis();
+      bool longPress = false;
+      while (touch.touched()) {
+        if (!longPress && millis() - pressStart >= LONG_PRESS_MS) {
+          longPress = true;
+          drawCardNote(i, "Raising...");
+        }
+        delay(10);
+      }
+      String path;
+      if (longPress) {
+        path = String("/api/bathrooms/") + bathrooms[i].id + "/flag/" + nextLevel(bathrooms[i].state);
+      } else {
+        const char* action = bathrooms[i].state == "ok" ? "flag" : "confirm";
+        path = String("/api/bathrooms/") + bathrooms[i].id + "/" + action;
+        drawCardNote(i, "Saving...");
+      }
+      if (!requestApi(path, "POST")) { drawCardNote(i, "Offline, try again"); delay(1200); }
       fetchStatus();
       paintedState[i] = ""; renderUpdates();
-      while (touch.touched()) delay(10);
       return;
     }
   }
@@ -463,7 +487,12 @@ void handleScreenshot() {
   }
   client.flush();
   client.stop();
-  logf("screenshot: sent %d bytes\n", SCREEN_W * SCREEN_H * 2);
+  // Reading the framebuffer reconfigures the SPI bus the touch controller shares
+  // with the display, and leaves it unusable for touch. Hand the bus back.
+  SPI.begin(TOUCH_SCK_PIN, TOUCH_MISO_PIN, TOUCH_MOSI_PIN, TOUCH_CS_PIN);
+  touch.begin();
+  touch.setRotation(0);
+  logf("screenshot: sent %d bytes, touch bus restored\n", SCREEN_W * SCREEN_H * 2);
 }
 void loop() {
   static bool otaStarted = false;

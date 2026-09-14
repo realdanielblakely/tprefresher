@@ -92,6 +92,27 @@ check the result with `tools/preview_vlw.py NAME.vlw "sample text"`, which parse
 file the way TFT_eSPI does. Verify a font with the previewer before flashing; a bad
 .vlw shows up as garbled glyphs that cost a flash cycle to diagnose.
 
+## Touch gestures
+
+| | Clear room | Flagged room |
+| --- | --- | --- |
+| Tap | Flag it low | Clear it |
+| Hold, 600ms | Flag it low | Raise one level |
+
+A hold never clears a room. Escalating and cancelling must not share a gesture.
+Holding steps low to urgent to out and stops there.
+
+The handler waits for release before sending anything, so the gesture is known
+before a request goes out rather than firing on contact.
+
+Worth knowing if touch ever looks broken again: a tap toggles, so tapping a room
+twice flags and immediately clears it, leaving the server exactly where it started.
+That is indistinguishable from a dead panel from across the room, and it cost a long
+debugging session. The counter proved touches were registering the whole time. If
+touch looks dead, check whether the server state is changing before suspecting the
+hardware, the SPI bus, or the coordinate mapping. All three were investigated and all
+three were innocent.
+
 ## Screenshots
 
 The board can hand over its own framebuffer. The ST7796 supports reading display RAM
