@@ -40,31 +40,24 @@ Nothing needs a developer laptop to be awake any more.
 
 ## Deployment
 
-The backend runs on an always-on Mac as a launchd agent. The examples below use
-user `deploy` and host `server.local`; substitute your own.
+Since 2026-11-11 the backend runs on the house's Home Assistant box (Lenovo M710q,
+192.168.1.101) as the local add-on **TP Refresher** (`local_tprefresher`, files in
+`ha-addon/`), on **port 3080** (3000 is taken there by the eufy bridge).
 
-- Working copy: `/Users/deploy/tprefresher`
-- Node: `/Users/deploy/.local/bin/node`, v22
-- Job: `~/Library/LaunchAgents/com.tprefresher.backend.plist`, RunAtLoad and
-  KeepAlive, so launchd restarts it if the process dies
-- Log: `/Users/deploy/Library/Logs/tprefresher.log`
-- State: `/Users/deploy/tprefresher/backend/data.json`, survives restarts
-
-Restart it with:
-
-    launchctl unload ~/Library/LaunchAgents/com.tprefresher.backend.plist
-    launchctl load ~/Library/LaunchAgents/com.tprefresher.backend.plist
-
-That machine is on AC with `pmset sleep 0`, so it does not idle sleep. Closing the
-lid is still a sleep, and a sleeping host serves nothing.
-
-This is a LaunchAgent, not a LaunchDaemon, so it starts on user login rather than at
-boot. After a reboot with nobody logged in, it will not be running.
-
-The working copy was copied from a developer machine, not cloned, because the GitHub
-CLI is not set up on the host. `git pull` there will need credentials before it works.
-`firmware/include/secrets.h` was deliberately excluded, since the backend needs no
-secrets and the firmware ones should not spread to another machine.
+- Code: `/share/tprefresher/app` (backend, public, node_modules), copied by
+  `ha-addon/deploy.sh` (`deploy.sh restart` after backend changes). The Dockerfile and
+  run.sh are baked into the image: after changing them, `ha apps rebuild local_tprefresher`.
+- State: `/share/tprefresher/data/data.json` and `laundry.json`.
+- The Tidbyt companion runs inside the same add-on every 300 s (pixlet 0.34.0 in the image);
+  its key and device id are add-on options. Email settings are add-on options too (unset).
+- Phone page: http://192.168.1.101:3080/
+- The board's `API_BASE_URL` in secrets.h is `http://192.168.1.101:3080` (OTA'd 2026-11-11;
+  `export OTA_PASSWORD=...` from secrets.h before `pio run -e ota -t upload`).
+- **Alexa stays on Hermes** (192.168.1.246): Echo devices only find a Hue bridge on port 80,
+  which Home Assistant uses on the M710q. Hermes runs only `backend/alexa.js` with
+  `TP_REMOTE=http://192.168.1.101:3080` (LaunchAgent `com.danielblakely.tprefresher-alexa`,
+  log ~/Library/Logs/tprefresher-alexa.log); every switch is forwarded to the add-on.
+  The old backend and Tidbyt LaunchAgents are in `~/retired-launchagents/` on Hermes.
 
 ## Design brief
 

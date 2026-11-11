@@ -7,7 +7,26 @@ const dgram = require('dgram');
 const http = require('http');
 const os = require('os');
 const { bathrooms } = require('./config');
-const { allStatuses, update, levels } = require('./store');
+// TP_REMOTE (e.g. http://192.168.1.101:3080) runs this piece on its own, on a machine that can
+// have port 80, and forwards every read and switch to the main server's HTTP API. Since
+// 2026-11-11 the main server is on the Home Assistant box, where port 80 is taken.
+const REMOTE = (process.env.TP_REMOTE || '').replace(/\/$/, '');
+const local = REMOTE ? null : require('./store');
+const levels = ['low', 'urgent', 'out'];
+const remoteHeaders = process.env.API_TOKEN ? { 'X-API-Token': process.env.API_TOKEN } : {};
+async function allStatuses() {
+  if (!REMOTE) return local.allStatuses();
+  const res = await fetch(`${REMOTE}/api/status`, { headers: remoteHeaders, signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  return (await res.json()).bathrooms;
+}
+async function update(id, flaggedAt, level) {
+  if (!REMOTE) return local.update(id, flaggedAt, level);
+  const path = flaggedAt ? `/api/bathrooms/${id}/flag/${level}` : `/api/bathrooms/${id}/confirm`;
+  const res = await fetch(REMOTE + path, { method: 'POST', headers: remoteHeaders, signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  return res.json();
+}
 
 const SSDP_ADDRESS = '239.255.255.250';
 const SSDP_PORT = 1900;
@@ -149,3 +168,6 @@ function start({ port = Number(process.env.ALEXA_PORT || 80), log = console.log 
 }
 
 module.exports = { start, buildDevices };
+
+// `TP_REMOTE=http://192.168.1.101:3080 node backend/alexa.js` runs only the Alexa piece.
+if (require.main === module) start();

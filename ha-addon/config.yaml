@@ -1,0 +1,30 @@
+name: TP Refresher
+version: "1.0.0"
+slug: tprefresher
+description: Bathroom TP and laundry server for the closet board, phone page and Tidbyt (moved from Hermes 2026-11-11)
+arch:
+  - amd64
+init: false
+startup: application
+boot: auto
+host_network: true
+map:
+  - share:rw
+options:
+  smtp_host: ""
+  smtp_port: 465
+  smtp_user: ""
+  smtp_pass: ""
+  mail_from: ""
+  mail_to: ""
+  tidbyt_api_key: ""
+  tidbyt_device_id: ""
+schema:
+  smtp_host: str
+  smtp_port: int
+  smtp_user: str
+  smtp_pass: password
+  mail_from: str
+  mail_to: str
+  tidbyt_api_key: password
+  tidbyt_device_id: str
